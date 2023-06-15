@@ -1,30 +1,20 @@
-// Copyright 2018 Serde Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+use std::io::Cursor;
 
-use crate::error::{Error, Result};
+use crate::{error::{Error, Result}, context::Context};
 use serde::ser::{self, Serialize};
 
 pub struct Serializer {
-    // This string starts empty and JSON is appended as values are serialized.
-    output: String,
+    output: Cursor<Vec<u8>>,
+    context: Context
 }
 
-// By convention, the public API of a Serde serializer is one or more `to_abc`
-// functions such as `to_string`, `to_bytes`, or `to_writer` depending on what
-// Rust types the serializer is able to produce as output.
-//
-// This basic serializer supports only `to_string`.
-pub fn to_string<T>(value: &T) -> Result<String>
+pub fn to_vec<T>(value: &T) -> Result<Vec<u8>>
 where
     T: Serialize,
 {
     let mut serializer = Serializer {
-        output: String::new(),
+        output: Cursor::new(Vec::new()),
+        context: Context::new()
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output)

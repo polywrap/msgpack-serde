@@ -9,7 +9,16 @@
 mod de;
 mod error;
 mod ser;
+mod format;
+mod context;
+mod write;
+mod write_encoder;
+mod data_view;
+
+pub use num_bigint::BigInt;
+pub use bigdecimal::BigDecimal as BigNumber;
+pub use serde_json as JSON;
+pub use std::collections::BTreeMap as Map;
 
 pub use crate::de::{from_str, Deserializer};
-pub use crate::error::{Error, Result};
-pub use crate::ser::{to_string, Serializer};
+pub use crate::ser::{to_vec, Serializer};
