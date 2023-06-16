@@ -1,11 +1,10 @@
 use std::io::Cursor;
 
-use crate::{error::{Error, Result}, context::Context};
+use crate::{error::{Error, Result}, context::Context, write_encoder::WriteEncoder, write::Write};
 use serde::ser::{self, Serialize};
 
 pub struct Serializer {
-    output: Cursor<Vec<u8>>,
-    context: Context
+    write_encoder: WriteEncoder
 }
 
 pub fn to_vec<T>(value: &T) -> Result<Vec<u8>>
@@ -13,11 +12,10 @@ where
     T: Serialize,
 {
     let mut serializer = Serializer {
-        output: Cursor::new(Vec::new()),
-        context: Context::new()
+        write_encoder: WriteEncoder::new(&[], Context::new())
     };
     value.serialize(&mut serializer)?;
-    Ok(serializer.output)
+    Ok(serializer.write_encoder.get_buffer())
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -48,7 +46,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // of the primitive types of the data model and map it to JSON by appending
     // into the output string.
     fn serialize_bool(self, v: bool) -> Result<()> {
-        self.output += if v { "true" } else { "false" };
+        self.write_encoder.write_bool(&v);
         Ok(())
     }
 
@@ -57,76 +55,78 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // will be serialized the same. Other formats, especially compact binary
     // formats, may need independent logic for the different sizes.
     fn serialize_i8(self, v: i8) -> Result<()> {
-        self.serialize_i64(i64::from(v))
+        self.write_encoder.write_i8(&v);
+        Ok(())
     }
 
     fn serialize_i16(self, v: i16) -> Result<()> {
-        self.serialize_i64(i64::from(v))
+        self.write_encoder.write_i16(&v);
+        Ok(())
     }
 
     fn serialize_i32(self, v: i32) -> Result<()> {
-        self.serialize_i64(i64::from(v))
+        self.write_encoder.write_i32(&v);
+        Ok(())
     }
 
     // Not particularly efficient but this is example code anyway. A more
     // performant approach would be to use the `itoa` crate.
     fn serialize_i64(self, v: i64) -> Result<()> {
-        self.output += &v.to_string();
+        self.write_encoder.write_i64(&v);
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<()> {
-        self.serialize_u64(u64::from(v))
+      self.write_encoder.write_u8(&v);
+      Ok(())
     }
 
     fn serialize_u16(self, v: u16) -> Result<()> {
-        self.serialize_u64(u64::from(v))
+      self.write_encoder.write_u16(&v);
+      Ok(())
     }
 
     fn serialize_u32(self, v: u32) -> Result<()> {
-        self.serialize_u64(u64::from(v))
+        self.write_encoder.write_u32(&v);
+        Ok(())
     }
 
     fn serialize_u64(self, v: u64) -> Result<()> {
-        self.output += &v.to_string();
-        Ok(())
+      self.write_encoder.write_u64(&v);
+      Ok(())
     }
 
     fn serialize_f32(self, v: f32) -> Result<()> {
-        self.serialize_f64(f64::from(v))
+      self.write_encoder.write_f32(&v);
+      Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> Result<()> {
-        self.output += &v.to_string();
-        Ok(())
+      self.write_encoder.write_f64(&v);
+      Ok(())
     }
 
     // Serialize a char as a single-character string. Other formats may
     // represent this differently.
     fn serialize_char(self, v: char) -> Result<()> {
-        self.serialize_str(&v.to_string())
+      self.write_encoder.write_string(&v.to_string());
+      Ok(())
     }
 
     // This only works for strings that don't require escape sequences but you
     // get the idea. For example it would emit invalid JSON if the input string
     // contains a '"' character.
     fn serialize_str(self, v: &str) -> Result<()> {
-        self.output += "\"";
-        self.output += v;
-        self.output += "\"";
-        Ok(())
+      self.write_encoder.write_string(v);
+      Ok(())
     }
 
     // Serialize a byte array as an array of bytes. Could also use a base64
     // string here. Binary formats will typically represent byte arrays more
     // compactly.
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        use serde::ser::SerializeSeq;
-        let mut seq = self.serialize_seq(Some(v.len()))?;
-        for byte in v {
-            seq.serialize_element(byte)?;
-        }
-        seq.end()
+        self.write_encoder.write_bytes(v);
+        Ok(())
     }
 
     // An absent optional is represented as the JSON `null`.
@@ -149,7 +149,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // In Serde, unit means an anonymous value containing no data. Map this to
     // JSON as `null`.
     fn serialize_unit(self) -> Result<()> {
-        self.output += "null";
+        self.write_encoder.write_nil();
         Ok(())
     }
 
@@ -170,7 +170,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<()> {
-        self.serialize_str(variant)
+        self.write_encoder.write_u32(&_variant_index);
+        Ok(())
     }
 
     // As is done here, serializers are encouraged to treat newtype structs as
