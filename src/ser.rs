@@ -3,17 +3,63 @@ use std::io::Cursor;
 use crate::{error::{Error, Result}, context::Context, write_encoder::WriteEncoder, write::Write};
 use serde::ser::{self, Serialize};
 
+pub struct ArraySerializer<'a> {
+  array_len: usize,
+  array_serializer: Serializer,
+  parent_encoder: &'a mut WriteEncoder,
+}
+
+impl ser::SerializeSeq for ArraySerializer<'_> {
+  type Ok = ();
+  type Error = Error;
+
+  fn serialize_element<T>(&mut self, value: &T) -> Result<Self::Ok> where
+      T: ?Sized + Serialize {
+      value.serialize(&mut self.array_serializer)?;
+      self.array_len += 1;
+      Ok(())
+  }
+
+  fn end(self) -> Result<Self::Ok> {
+      if self.items.is_empty() {
+          self.output.push(EMPTY_ARRAY_HEADER);
+          return Ok(());
+      }
+
+      let all_elems_same_length = self.items
+          .iter()
+          .all(|ref v| v.len() == self.items[0].len());
+
+      if all_elems_same_length {
+          self.output.push(SAME_LENGTH_HEADER);
+          for item in &mut self.items.iter_mut() {
+              self.output.append(item);
+          }
+      } else {
+          self.output.push(VARIABLE_LENGTH_HEADER);
+
+          // ... skipped: encode rest of items using more complicated serialization ...
+      }
+
+      Ok(())
+  }
+}
+
 pub struct Serializer {
     write_encoder: WriteEncoder
+}
+
+impl Default for Serializer {
+    fn default() -> Self {
+        Self { write_encoder: WriteEncoder::new(&[], Context::new()) }
+    }
 }
 
 pub fn to_vec<T>(value: &T) -> Result<Vec<u8>>
 where
     T: Serialize,
 {
-    let mut serializer = Serializer {
-        write_encoder: WriteEncoder::new(&[], Context::new())
-    };
+    let mut serializer = Serializer::default();
     value.serialize(&mut serializer)?;
     Ok(serializer.write_encoder.get_buffer())
 }
