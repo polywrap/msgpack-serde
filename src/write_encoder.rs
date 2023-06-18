@@ -1,4 +1,4 @@
-use crate::{BigInt, BigNumber, JSON, context::Context, data_view::DataView, format::Format, write::Write, error::EncodeError};
+use crate::{BigInt, BigNumber, JSON, context::Context, data_view::DataView, format::{Format, ExtensionType}, write::Write, error::EncodeError};
 use byteorder::{BigEndian, WriteBytesExt};
 use core::hash::Hash;
 use std::{collections::BTreeMap, io::Write as StdioWrite};

@@ -4,6 +4,19 @@ const FIX_ARRAY_SIZE: u8 = 0x0f;
 const FIX_MAP_SIZE: u8 = 0x0f;
 const FIX_STR_SIZE: u8 = 0x1f;
 
+pub enum ExtensionType {
+  // must be in range 0-127
+  GenericMap,
+}
+
+impl ExtensionType {
+  pub fn to_u8(&self) -> u8 {
+    match &self {
+        ExtensionType::GenericMap => 1,
+    }
+  }
+}
+
 /// Format markers in the MsgPack specification
 /// The `Reserved` variant is not used, according to the spec.
 #[derive(Clone, Copy, Debug, PartialEq)]
