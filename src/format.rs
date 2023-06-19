@@ -195,9 +195,9 @@ impl From<u8> for Format {
     }
 }
 
-impl Into<u8> for Format {
+impl From<Format> for u8 {
     #[inline]
-    fn into(self) -> u8 {
-        self.to_u8()
+    fn from(val: Format) -> Self {
+        val.to_u8()
     }
 }

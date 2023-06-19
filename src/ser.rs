@@ -498,7 +498,7 @@ use crate::to_vec;
           Case::new("32-bit unsigned int", 2147483648, &[206, 128, 0, 0, 0]),
           Case::new(
               "32-bit unsigned int",
-              4294967295 as u32,
+              4294967295_u32,
               &[206, 255, 255, 255, 255],
           ),
       ];

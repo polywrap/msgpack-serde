@@ -34,7 +34,7 @@ impl WriteEncoder {
         value: i8,
     ) -> Result<(), EncodeError> {
         // From 0xe0 (0b11100000) taking last 5 bits, to 0xff (0b11111111), taking last 5 bits
-        assert!(-32 <= value && value <= 0);
+        assert!((-32..=0).contains(&value));
         Format::set_format(self, Format::NegativeFixInt(value))
             .map_err(|e| EncodeError::FormatWriteError(e.to_string()))
     }
@@ -68,7 +68,7 @@ impl WriteEncoder {
             Ok(WriteBytesExt::write_u32::<BigEndian>(self, val as u32)?)
         } else {
             Format::set_format(self, Format::Uint64)?;
-            Ok(WriteBytesExt::write_u64::<BigEndian>(self, val as u64)?)
+            Ok(WriteBytesExt::write_u64::<BigEndian>(self, val)?)
         }
     }
 
@@ -83,7 +83,7 @@ impl WriteEncoder {
 
         if val >= 0 {
           Ok(self.write_u64(&(val as u64))?)
-        } else if val < 0 && val >= -(1 << 5) {
+        } else if (-(1 << 5)..0).contains(&val) {
             Ok(self.write_negative_fixed_int(val as i8)?)
         } else if val <= i8::MAX as i64 && val >= i8::MIN as i64 {
             Format::set_format(self, Format::Int8)?;
@@ -96,7 +96,7 @@ impl WriteEncoder {
             Ok(WriteBytesExt::write_i32::<BigEndian>(self, val as i32)?)
         } else {
             Format::set_format(self, Format::Int64)?;
-            Ok(WriteBytesExt::write_i64::<BigEndian>(self, val as i64)?)
+            Ok(WriteBytesExt::write_i64::<BigEndian>(self, val)?)
         }
     }
 
@@ -326,7 +326,7 @@ impl Write for WriteEncoder {
         K: Clone + Eq + Hash + Ord,
     {
         self.write_map_length(&(map.len() as u32))?;
-        let keys: Vec<_> = map.keys().into_iter().collect();
+        let keys: Vec<_> = map.keys().collect();
         for key in keys {
             let value = &map[key];
             key_writer(self, key)?;
