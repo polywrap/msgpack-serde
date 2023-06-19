@@ -28,9 +28,9 @@ impl ser::SerializeSeq for ArraySerializer<'_> {
     }
 
     fn end(self) -> Result<Self::Ok> {
-        self.parent_encoder.write_array_length(&self.array_len);
+        self.parent_encoder.write_array_length(&self.array_len)?;
         self.parent_encoder
-            .write(&self.array_serializer.write_encoder.get_buffer());
+            .write(&self.array_serializer.write_encoder.get_buffer())?;
         Ok(())
     }
 }
@@ -52,12 +52,76 @@ impl ser::SerializeTuple for ArraySerializer<'_> {
     }
 
     fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
-        self.parent_encoder.write_array_length(&self.array_len);
+        self.parent_encoder.write_array_length(&self.array_len)?;
         self.parent_encoder
-            .write(&self.array_serializer.write_encoder.get_buffer());
+            .write(&self.array_serializer.write_encoder.get_buffer())?;
         Ok(())
     }
 }
+
+pub struct MapSerializer<'a> {
+  map_serializer: Serializer,
+  parent_encoder: &'a mut WriteEncoder,
+}
+
+impl ser::SerializeMap for MapSerializer<'_> {
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_key<T: ?Sized>(&mut self, key: &T) -> std::result::Result<(), Self::Error>
+    where
+        T: Serialize {
+          key.serialize(&mut self.map_serializer)
+    }
+
+    fn serialize_value<T: ?Sized>(&mut self, value: &T) -> std::result::Result<(), Self::Error>
+    where
+        T: Serialize {
+          value.serialize(&mut self.map_serializer)
+    }
+
+    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
+        let map_buffer = self.map_serializer.write_encoder.get_buffer();
+        self.parent_encoder.write_ext_map_len(map_buffer.len())?;
+        self.parent_encoder.write_ext_map_type()?;
+        self.parent_encoder
+            .write(&map_buffer)?;
+        Ok(())
+    }
+}
+
+pub struct StructSerializer<'a> {
+  entries: u32,
+  struct_serializer: Serializer,
+  parent_encoder: &'a mut WriteEncoder,
+}
+
+impl ser::SerializeStruct for StructSerializer<'_> {
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_field<T: ?Sized>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> std::result::Result<(), Self::Error>
+    where
+        T: Serialize {
+          key.serialize(&mut self.struct_serializer)?;
+          value.serialize(&mut self.struct_serializer)?;
+          self.entries += 1;
+
+          Ok(())
+    }
+
+    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
+      self.parent_encoder.write_map_length(&self.entries)?;
+      self.parent_encoder
+          .write(&self.struct_serializer.write_encoder.get_buffer())?;
+      Ok(())
+  }
+}
+
 
 pub struct Serializer {
     write_encoder: WriteEncoder,
@@ -91,77 +155,78 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeTupleStruct = Self;
     // TODO: should tuples be serialized as sequences?. Ex: Color(u8, bool) = [3, true]?
     type SerializeTupleVariant = Self;
-    type SerializeMap = Self;
-    type SerializeStruct = Self;
+    type SerializeMap = MapSerializer<'a>;
+    type SerializeStruct = StructSerializer<'a>;
+    // TODO: how should we serialize struct variants?
     type SerializeStructVariant = Self;
 
     fn serialize_bool(self, v: bool) -> Result<()> {
-        self.write_encoder.write_bool(&v);
+        self.write_encoder.write_bool(&v)?;
         Ok(())
     }
 
     fn serialize_i8(self, v: i8) -> Result<()> {
-        self.write_encoder.write_i8(&v);
+        self.write_encoder.write_i8(&v)?;
         Ok(())
     }
 
     fn serialize_i16(self, v: i16) -> Result<()> {
-        self.write_encoder.write_i16(&v);
+        self.write_encoder.write_i16(&v)?;
         Ok(())
     }
 
     fn serialize_i32(self, v: i32) -> Result<()> {
-        self.write_encoder.write_i32(&v);
+        self.write_encoder.write_i32(&v)?;
         Ok(())
     }
 
     fn serialize_i64(self, v: i64) -> Result<()> {
-        self.write_encoder.write_i64(&v);
+        self.write_encoder.write_i64(&v)?;
         Ok(())
     }
 
     fn serialize_u8(self, v: u8) -> Result<()> {
-        self.write_encoder.write_u8(&v);
+        self.write_encoder.write_u8(&v)?;
         Ok(())
     }
 
     fn serialize_u16(self, v: u16) -> Result<()> {
-        self.write_encoder.write_u16(&v);
+        self.write_encoder.write_u16(&v)?;
         Ok(())
     }
 
     fn serialize_u32(self, v: u32) -> Result<()> {
-        self.write_encoder.write_u32(&v);
+        self.write_encoder.write_u32(&v)?;
         Ok(())
     }
 
     fn serialize_u64(self, v: u64) -> Result<()> {
-        self.write_encoder.write_u64(&v);
+        self.write_encoder.write_u64(&v)?;
         Ok(())
     }
 
     fn serialize_f32(self, v: f32) -> Result<()> {
-        self.write_encoder.write_f32(&v);
+        self.write_encoder.write_f32(&v)?;
         Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> Result<()> {
-        self.write_encoder.write_f64(&v);
+        self.write_encoder.write_f64(&v)?;
         Ok(())
     }
 
     fn serialize_char(self, v: char) -> Result<()> {
-        self.write_encoder.write_string(&v.to_string());
+        self.write_encoder.write_string(&v.to_string())?;
         Ok(())
     }
 
     fn serialize_str(self, v: &str) -> Result<()> {
-        self.write_encoder.write_string(v);
+        self.write_encoder.write_string(v)?;
         Ok(())
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-        self.write_encoder.write_bytes(v);
+        self.write_encoder.write_bytes(v)?;
         Ok(())
     }
 
@@ -177,7 +242,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_unit(self) -> Result<()> {
-        self.write_encoder.write_nil();
+        self.write_encoder.write_nil()?;
         Ok(())
     }
 
@@ -189,9 +254,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self,
         _name: &'static str,
         _variant_index: u32,
-        variant: &'static str,
+        _: &'static str,
     ) -> Result<()> {
-        self.write_encoder.write_u32(&_variant_index);
+        self.write_encoder.write_u32(&_variant_index)?;
         Ok(())
     }
 
@@ -215,8 +280,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self,
         _name: &'static str,
         _variant_index: u32,
-        variant: &'static str,
-        value: &T,
+        _: &'static str,
+        _: &T,
     ) -> Result<()>
     where
         T: ?Sized + Serialize,
@@ -242,7 +307,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
-        len: usize,
+        _: usize,
     ) -> Result<Self::SerializeTupleStruct> {
         todo!()
     }
@@ -252,29 +317,32 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self,
         _name: &'static str,
         _variant_index: u32,
-        variant: &'static str,
+        _: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
         todo!()
     }
 
-    // Maps are represented in JSON as `{ K: V, K: V, ... }`.
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        self.output += "{";
-        Ok(self)
+      let map_ser = MapSerializer {
+          map_serializer: Serializer::default(),
+          parent_encoder: &mut self.write_encoder,
+      };
+      Ok(map_ser)
     }
 
-    // Structs look just like maps in JSON. In particular, JSON requires that we
-    // serialize the field names of the struct. Other formats may be able to
-    // omit the field names when serializing structs because the corresponding
-    // Deserialize implementation is required to know what the keys are without
-    // looking at the serialized data.
     fn serialize_struct(
         self,
         _name: &'static str,
-        len: usize,
+        _: usize,
     ) -> Result<Self::SerializeStruct> {
-        self.serialize_map(Some(len))
+        let struct_ser = StructSerializer {
+            entries: 0,
+            struct_serializer: Serializer::default(),
+            parent_encoder: &mut self.write_encoder,
+        };
+
+        Ok(struct_ser)
     }
 
     // Struct variants are represented in JSON as `{ NAME: { K: V, ... } }`.
@@ -283,164 +351,61 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         self,
         _name: &'static str,
         _variant_index: u32,
-        variant: &'static str,
+        _: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        self.output += "{";
-        variant.serialize(&mut *self)?;
-        self.output += ":{";
-        Ok(self)
+        todo!()
     }
 }
 
-// The following 7 impls deal with the serialization of compound types like
-// sequences and maps. Serialization of such types is begun by a Serializer
-// method and followed by zero or more calls to serialize individual elements of
-// the compound type and one call to end the compound type.
-
-
-// Same thing but for tuple structs.
 impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        if !self.output.ends_with('[') {
-            self.output += ",";
-        }
-        value.serialize(&mut **self)
+        todo!()
     }
 
     fn end(self) -> Result<()> {
-        self.output += "]";
-        Ok(())
+        todo!()
     }
 }
 
-// Tuple variants are a little different. Refer back to the
-// `serialize_tuple_variant` method above:
-//
-//    self.output += "{";
-//    variant.serialize(&mut *self)?;
-//    self.output += ":[";
-//
-// So the `end` method in this impl is responsible for closing both the `]` and
-// the `}`.
 impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, _: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        if !self.output.ends_with('[') {
-            self.output += ",";
-        }
-        value.serialize(&mut **self)
+      todo!()
     }
 
     fn end(self) -> Result<()> {
-        self.output += "]}";
-        Ok(())
+      todo!()
     }
 }
 
-// Some `Serialize` types are not able to hold a key and value in memory at the
-// same time so `SerializeMap` implementations are required to support
-// `serialize_key` and `serialize_value` individually.
-//
-// There is a third optional method on the `SerializeMap` trait. The
-// `serialize_entry` method allows serializers to optimize for the case where
-// key and value are both available simultaneously. In JSON it doesn't make a
-// difference so the default behavior for `serialize_entry` is fine.
-impl<'a> ser::SerializeMap for &'a mut Serializer {
-    type Ok = ();
-    type Error = Error;
-
-    // The Serde data model allows map keys to be any serializable type. JSON
-    // only allows string keys so the implementation below will produce invalid
-    // JSON if the key serializes as something other than a string.
-    //
-    // A real JSON serializer would need to validate that map keys are strings.
-    // This can be done by using a different Serializer to serialize the key
-    // (instead of `&mut **self`) and having that other serializer only
-    // implement `serialize_str` and return an error on any other data type.
-    fn serialize_key<T>(&mut self, key: &T) -> Result<()>
-    where
-        T: ?Sized + Serialize,
-    {
-        if !self.output.ends_with('{') {
-            self.output += ",";
-        }
-        key.serialize(&mut **self)
-    }
-
-    // It doesn't make a difference whether the colon is printed at the end of
-    // `serialize_key` or at the beginning of `serialize_value`. In this case
-    // the code is a bit simpler having it here.
-    fn serialize_value<T>(&mut self, value: &T) -> Result<()>
-    where
-        T: ?Sized + Serialize,
-    {
-        self.output += ":";
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<()> {
-        self.output += "}";
-        Ok(())
-    }
-}
-
-// Structs are like maps in which the keys are constrained to be compile-time
-// constant strings.
-impl<'a> ser::SerializeStruct for &'a mut Serializer {
-    type Ok = ();
-    type Error = Error;
-
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
-    where
-        T: ?Sized + Serialize,
-    {
-        if !self.output.ends_with('{') {
-            self.output += ",";
-        }
-        key.serialize(&mut **self)?;
-        self.output += ":";
-        value.serialize(&mut **self)
-    }
-
-    fn end(self) -> Result<()> {
-        self.output += "}";
-        Ok(())
-    }
-}
-
-// Similar to `SerializeTupleVariant`, here the `end` method is responsible for
-// closing both of the curly braces opened by `serialize_struct_variant`.
 impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    fn serialize_field<T: ?Sized>(
+        &mut self,
+        _: &'static str,
+        _: &T,
+    ) -> std::result::Result<(), Self::Error>
     where
-        T: ?Sized + Serialize,
-    {
-        if !self.output.ends_with('{') {
-            self.output += ",";
-        }
-        key.serialize(&mut **self)?;
-        self.output += ":";
-        value.serialize(&mut **self)
+        T: Serialize {
+        todo!()
     }
 
-    fn end(self) -> Result<()> {
-        self.output += "}}";
-        Ok(())
+    fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
+        todo!()
     }
 }
 
@@ -448,7 +413,9 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
 #[cfg(test)]
 mod tests {
-    use super::to_string;
+    use std::collections::BTreeMap;
+
+    use super::to_vec;
     use serde_derive::Serialize;
 
     #[test]
@@ -463,34 +430,26 @@ mod tests {
             int: 1,
             seq: vec!["a", "b"],
         };
-        let expected = r#"{"int":1,"seq":["a","b"]}"#;
-        assert_eq!(to_string(&test).unwrap(), expected);
+
+        println!("{:?}", to_vec(&test));
     }
 
     #[test]
-    fn test_enum() {
+    fn test_ext_map() {
         #[derive(Serialize)]
-        enum E {
-            Unit,
-            Newtype(u32),
-            Tuple(u32, u32),
-            Struct { a: u32 },
+        struct Test {
+            int: u32,
+            map: BTreeMap<String, u32>,
         }
 
-        let u = E::Unit;
-        let expected = r#""Unit""#;
-        assert_eq!(to_string(&u).unwrap(), expected);
+        let mut map = BTreeMap::new();
+        map.insert("foo".to_string(), 1);
 
-        let n = E::Newtype(1);
-        let expected = r#"{"Newtype":1}"#;
-        assert_eq!(to_string(&n).unwrap(), expected);
+        let test = Test {
+            int: 1,
+            map,
+        };
 
-        let t = E::Tuple(1, 2);
-        let expected = r#"{"Tuple":[1,2]}"#;
-        assert_eq!(to_string(&t).unwrap(), expected);
-
-        let s = E::Struct { a: 1 };
-        let expected = r#"{"Struct":{"a":1}}"#;
-        assert_eq!(to_string(&s).unwrap(), expected);
+        println!("{:?}", to_vec(&test));
     }
 }

@@ -1,4 +1,11 @@
-use crate::{BigInt, BigNumber, JSON, context::Context, data_view::DataView, format::{Format, ExtensionType}, write::Write, error::EncodeError};
+use crate::{
+    context::Context,
+    data_view::DataView,
+    error::EncodeError,
+    format::{ExtensionType, Format},
+    write::Write,
+    BigInt, BigNumber, JSON,
+};
 use byteorder::{BigEndian, WriteBytesExt};
 use core::hash::Hash;
 use std::{collections::BTreeMap, io::Write as StdioWrite};
@@ -13,7 +20,8 @@ impl WriteEncoder {
     pub fn new(buf: &[u8], context: Context) -> Self {
         Self {
             context: context.clone(),
-            view: DataView::new(buf, context).expect("Error creating new data view"),
+            view: DataView::new(buf, context)
+                .expect("Error creating new data view"),
         }
     }
 
@@ -21,14 +29,20 @@ impl WriteEncoder {
         self.view.get_buffer()
     }
 
-    pub fn write_negative_fixed_int(&mut self, value: i8) -> Result<(), EncodeError> {
+    pub fn write_negative_fixed_int(
+        &mut self,
+        value: i8,
+    ) -> Result<(), EncodeError> {
         // From 0xe0 (0b11100000) taking last 5 bits, to 0xff (0b11111111), taking last 5 bits
         assert!(-32 <= value && value <= 0);
         Format::set_format(self, Format::NegativeFixInt(value))
             .map_err(|e| EncodeError::FormatWriteError(e.to_string()))
     }
 
-    pub fn write_positive_fixed_int(&mut self, value: u8) -> Result<(), EncodeError> {
+    pub fn write_positive_fixed_int(
+        &mut self,
+        value: u8,
+    ) -> Result<(), EncodeError> {
         assert!(value < 128);
         Format::set_format(self, Format::PositiveFixInt(value))
             .map_err(|e| EncodeError::FormatWriteError(e.to_string()))
@@ -68,22 +82,53 @@ impl WriteEncoder {
         let val = *value;
 
         if val >= 0 && val < 1 << 7 {
-          Ok(self.write_positive_fixed_int(val as u8)?)
+            Ok(self.write_positive_fixed_int(val as u8)?)
         } else if val < 0 && val >= -(1 << 5) {
-          Ok(self.write_negative_fixed_int(val as i8)?)
+            Ok(self.write_negative_fixed_int(val as i8)?)
         } else if val <= i8::MAX as i64 && val >= i8::MIN as i64 {
-          Format::set_format(self, Format::Int8)?;
-          Ok(WriteBytesExt::write_i8(self, val as i8)?)
+            Format::set_format(self, Format::Int8)?;
+            Ok(WriteBytesExt::write_i8(self, val as i8)?)
         } else if val <= i16::MAX as i64 && val >= i16::MIN as i64 {
-          Format::set_format(self, Format::Int16)?;
-          Ok(WriteBytesExt::write_i16::<BigEndian>(self, val as i16)?)
+            Format::set_format(self, Format::Int16)?;
+            Ok(WriteBytesExt::write_i16::<BigEndian>(self, val as i16)?)
         } else if val <= i32::MAX as i64 && val >= i32::MIN as i64 {
-          Format::set_format(self, Format::Int32)?;
-          Ok(WriteBytesExt::write_i32::<BigEndian>(self, val as i32)?)
+            Format::set_format(self, Format::Int32)?;
+            Ok(WriteBytesExt::write_i32::<BigEndian>(self, val as i32)?)
         } else {
-          Format::set_format(self, Format::Int64)?;
-          Ok(WriteBytesExt::write_i64::<BigEndian>(self, val as i64)?)
+            Format::set_format(self, Format::Int64)?;
+            Ok(WriteBytesExt::write_i64::<BigEndian>(self, val as i64)?)
         }
+    }
+
+    #[doc(hidden)]
+    pub fn write_ext_map_len(
+        &mut self,
+        length: usize,
+    ) -> Result<(), EncodeError> {
+        if length <= u8::MAX as usize {
+            Format::set_format(self, Format::Ext8)?;
+            WriteBytesExt::write_u8(self, length.try_into().unwrap())?;
+        } else if length <= u16::MAX as usize {
+            Format::set_format(self, Format::Ext16)?;
+            WriteBytesExt::write_u16::<BigEndian>(
+                self,
+                length.try_into().unwrap(),
+            )?;
+        } else {
+            Format::set_format(self, Format::Ext32)?;
+            WriteBytesExt::write_u32::<BigEndian>(
+                self,
+                length.try_into().unwrap(),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    pub fn write_ext_map_type(
+      &mut self
+    ) -> Result<(), EncodeError> {
+      Ok(WriteBytesExt::write_u8(self, ExtensionType::GenericMap.to_u8())?)
     }
 }
 
@@ -99,12 +144,14 @@ impl StdioWrite for WriteEncoder {
 
 impl Write for WriteEncoder {
     fn write_nil(&mut self) -> Result<(), EncodeError> {
-        Format::set_format(self, Format::Nil).map_err(|e| EncodeError::NilWriteError(e.to_string()))
+        Format::set_format(self, Format::Nil)
+            .map_err(|e| EncodeError::NilWriteError(e.to_string()))
     }
 
     fn write_bool(&mut self, value: &bool) -> Result<(), EncodeError> {
         let format = if *value { Format::True } else { Format::False };
-        Format::set_format(self, format).map_err(|e| EncodeError::BooleanWriteError(e.to_string()))
+        Format::set_format(self, format)
+            .map_err(|e| EncodeError::BooleanWriteError(e.to_string()))
     }
 
     fn write_i8(&mut self, value: &i8) -> Result<(), EncodeError> {
@@ -201,7 +248,10 @@ impl Write for WriteEncoder {
             .map_err(|e| EncodeError::BigIntWriteError(e.to_string()))
     }
 
-    fn write_bignumber(&mut self, value: &BigNumber) -> Result<(), EncodeError> {
+    fn write_bignumber(
+        &mut self,
+        value: &BigNumber,
+    ) -> Result<(), EncodeError> {
         self.write_string(&value.to_string())
             .map_err(|e| EncodeError::BigIntWriteError(e.to_string()))
     }
@@ -287,19 +337,10 @@ impl Write for WriteEncoder {
         let bytelength = buf.len();
 
         // Encode the extension format + bytelength
-        if bytelength <= u8::MAX as usize {
-            Format::set_format(self, Format::Ext8)?;
-            WriteBytesExt::write_u8(self, bytelength.try_into().unwrap())?;
-        } else if bytelength <= u16::MAX as usize {
-            Format::set_format(self, Format::Ext16)?;
-            WriteBytesExt::write_u16::<BigEndian>(self, bytelength.try_into().unwrap())?;
-        } else {
-            Format::set_format(self, Format::Ext32)?;
-            WriteBytesExt::write_u32::<BigEndian>(self, bytelength.try_into().unwrap())?;
-        }
+        self.write_ext_map_len(bytelength);
 
         // Set the extension type
-        WriteBytesExt::write_u8(self, ExtensionType::GenericMap.to_u8())?;
+        self.write_ext_map_type();
 
         // Copy the map's encoded buffer
         self.view.buffer.write_all(&buf)?;
