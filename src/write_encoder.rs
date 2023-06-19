@@ -81,8 +81,8 @@ impl WriteEncoder {
     pub fn write_i64(&mut self, value: &i64) -> Result<(), EncodeError> {
         let val = *value;
 
-        if val >= 0 && val < 1 << 7 {
-            Ok(self.write_positive_fixed_int(val as u8)?)
+        if val >= 0 {
+          Ok(self.write_u64(&(val as u64))?)
         } else if val < 0 && val >= -(1 << 5) {
             Ok(self.write_negative_fixed_int(val as i8)?)
         } else if val <= i8::MAX as i64 && val >= i8::MIN as i64 {
@@ -185,15 +185,29 @@ impl Write for WriteEncoder {
     }
 
     fn write_f32(&mut self, value: &f32) -> Result<(), EncodeError> {
-        Format::set_format(self, Format::Float32)?;
-        WriteBytesExt::write_f32::<BigEndian>(self, *value)
-            .map_err(|e| EncodeError::Float32WriteError(e.to_string()))
+        Write::write_f64(self, &(*value as f64)).map_err(|e| EncodeError::Float32WriteError(e.to_string()))
     }
 
     fn write_f64(&mut self, value: &f64) -> Result<(), EncodeError> {
-        Format::set_format(self, Format::Float64)?;
-        WriteBytesExt::write_f64::<BigEndian>(self, *value)
-            .map_err(|e| EncodeError::Float64WriteError(e.to_string()))
+        let val = *value;
+
+        fn is_exact_f32(num: f64) -> bool {
+          let f32_num = num as f32;
+          let f64_num = f32_num as f64;
+          f64_num == num
+        }
+        
+        if is_exact_f32(val) {
+          Format::set_format(self, Format::Float32)?;
+          WriteBytesExt::write_f32::<BigEndian>(self, (*value) as f32)
+            .map_err(|e| EncodeError::Float32WriteError(e.to_string()))?;
+        } else {
+          Format::set_format(self, Format::Float64)?;
+          WriteBytesExt::write_f64::<BigEndian>(self, *value)
+              .map_err(|e| EncodeError::Float64WriteError(e.to_string()))?;
+        }
+
+        Ok(())
     }
 
     fn write_string_length(&mut self, length: &u32) -> Result<(), EncodeError> {
