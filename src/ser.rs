@@ -4,7 +4,7 @@ use crate::{
     context::Context,
     error::{Error, Result},
     write::Write,
-    write_encoder::{WriteEncoder, self},
+    write_encoder::{WriteEncoder},
 };
 use serde::ser::{self, Serialize};
 
@@ -428,7 +428,7 @@ use crate::to_vec;
   
   #[derive(Default, Debug)]
   struct Case<T> {
-      name: String,
+      _name: String,
       input: T,
       want: Vec<u8>,
   }
@@ -436,7 +436,7 @@ use crate::to_vec;
   impl<T> Case<T> {
       fn new(name: &str, input: T, want: &[u8]) -> Self {
           Self {
-              name: name.to_string(),
+              _name: name.to_string(),
               input,
               want: want.to_vec(),
           }

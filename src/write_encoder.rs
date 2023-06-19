@@ -338,8 +338,8 @@ impl Write for WriteEncoder {
     fn write_ext_generic_map<K, V: Clone>(
         &mut self,
         map: &BTreeMap<K, V>,
-        mut key_writer: impl FnMut(&mut Self, &K) -> Result<(), EncodeError>,
-        mut val_writer: impl FnMut(&mut Self, &V) -> Result<(), EncodeError>,
+        key_writer: impl FnMut(&mut Self, &K) -> Result<(), EncodeError>,
+        val_writer: impl FnMut(&mut Self, &V) -> Result<(), EncodeError>,
     ) -> Result<(), EncodeError>
     where
         K: Clone + Eq + Hash + Ord,
@@ -351,10 +351,10 @@ impl Write for WriteEncoder {
         let bytelength = buf.len();
 
         // Encode the extension format + bytelength
-        self.write_ext_map_len(bytelength);
+        self.write_ext_map_len(bytelength)?;
 
         // Set the extension type
-        self.write_ext_map_type();
+        self.write_ext_map_type()?;
 
         // Copy the map's encoded buffer
         self.view.buffer.write_all(&buf)?;
