@@ -384,6 +384,8 @@ impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
 
 #[cfg(test)]
 mod tests {
+    use serde_derive::Serialize;
+
     use crate::to_vec;
     use std::collections::BTreeMap;
 
@@ -687,39 +689,38 @@ mod tests {
         }
     }
 
-    #[ignore]
     #[test]
-    fn test_write_map() {
-        let mut map1: BTreeMap<String, Vec<i32>> = BTreeMap::new();
-        let _ = map1.insert("Polywrap".to_string(), vec![3, 5, 9]);
-        let _ = map1.insert("Rust".to_string(), vec![1, 4, 7]);
-        let mut map2: BTreeMap<String, Vec<i32>> = BTreeMap::new();
-        for i in 0..16 {
-            map2.insert(i.to_string(), vec![i, i + 1, i + 2]);
+    fn test_write_struct() {
+        #[derive(Serialize)]
+        struct Bar {
+            bar: u16,
         }
+
+        #[derive(Serialize)]
+        struct Foo {
+            foo: Vec<Bar>,
+        }
+
+        let foo = Foo {
+            foo: vec![
+                Bar { bar: 2 },
+                Bar { bar: 4 },
+                Bar { bar: 6 },
+                Bar { bar: 8 },
+                Bar { bar: 10 },
+            ],
+        };
+
         let cases = [
             Case::new(
-                "fixmap",
-                map1,
+                "struct",
+                foo,
                 &[
-                    130, 168, 80, 111, 108, 121, 119, 114, 97, 112, 147, 3, 5,
-                    9, 164, 82, 117, 115, 116, 147, 1, 4, 7,
+                    129, 163, 102, 111, 111, 149, 129, 163, 98, 97, 114, 2,
+                    129, 163, 98, 97, 114, 4, 129, 163, 98, 97, 114, 6, 129,
+                    163, 98, 97, 114, 8, 129, 163, 98, 97, 114, 10,
                 ],
-            ),
-            Case::new(
-                "map 16",
-                map2,
-                &[
-                    222, 0, 16, 161, 48, 147, 0, 1, 2, 161, 49, 147, 1, 2, 3,
-                    162, 49, 48, 147, 10, 11, 12, 162, 49, 49, 147, 11, 12, 13,
-                    162, 49, 50, 147, 12, 13, 14, 162, 49, 51, 147, 13, 14, 15,
-                    162, 49, 52, 147, 14, 15, 16, 162, 49, 53, 147, 15, 16, 17,
-                    161, 50, 147, 2, 3, 4, 161, 51, 147, 3, 4, 5, 161, 52, 147,
-                    4, 5, 6, 161, 53, 147, 5, 6, 7, 161, 54, 147, 6, 7, 8, 161,
-                    55, 147, 7, 8, 9, 161, 56, 147, 8, 9, 10, 161, 57, 147, 9,
-                    10, 11,
-                ],
-            ),
+            )
         ];
 
         for case in cases {
