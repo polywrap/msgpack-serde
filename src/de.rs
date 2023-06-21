@@ -1,141 +1,258 @@
-// Copyright 2018 Serde Developers
-//
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
-
-use crate::error::{Error, Result};
+use crate::{
+    error::{get_error_message, Error, Result},
+    format::Format,
+};
+use byteorder::{BigEndian, ReadBytesExt};
 use serde::de::{
     self, Deserialize, DeserializeSeed, EnumAccess, IntoDeserializer,
     MapAccess, SeqAccess, VariantAccess, Visitor,
 };
-use std::ops::{AddAssign, MulAssign, Neg};
+use std::{io::{Cursor, Read}, fmt::format};
 
-pub struct Deserializer<'de> {
-    // This string starts with the input data and characters are truncated off
-    // the beginning as data is parsed.
-    input: &'de str,
+pub struct Deserializer {
+    buffer: Cursor<Vec<u8>>,
 }
 
-impl<'de> Deserializer<'de> {
-    // By convention, `Deserializer` constructors are named like `from_xyz`.
-    // That way basic use cases are satisfied by something like
-    // `serde_json::from_str(...)` while advanced use cases that require a
-    // deserializer can make one with `serde_json::Deserializer::from_str(...)`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(input: &'de str) -> Self {
-        Deserializer { input }
+impl Default for Deserializer {
+    fn default() -> Self {
+        Self {
+            buffer: Cursor::new(vec![]),
+        }
     }
 }
 
-// By convention, the public API of a Serde deserializer is one or more
-// `from_xyz` methods such as `from_str`, `from_bytes`, or `from_reader`
-// depending on what Rust types the deserializer is able to consume as input.
-//
-// This basic deserializer supports only `from_str`.
-pub fn from_str<'a, T>(s: &'a str) -> Result<T>
+impl Deserializer {
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_slice(buffer: &[u8]) -> Self {
+        Deserializer {
+            buffer: Cursor::new(buffer.to_vec()),
+        }
+    }
+}
+
+pub fn from_slice<'a, T>(buffer: &'a [u8]) -> Result<T>
 where
     T: Deserialize<'a>,
 {
-    let mut deserializer = Deserializer::from_str(s);
+    let mut deserializer = Deserializer::from_slice(buffer);
     let t = T::deserialize(&mut deserializer)?;
-    if deserializer.input.is_empty() {
+    if deserializer.buffer.get_ref().len() == 0 {
         Ok(t)
     } else {
         Err(Error::TrailingCharacters)
     }
 }
 
-// SERDE IS NOT A PARSING LIBRARY. This impl block defines a few basic parsing
-// functions from scratch. More complicated formats may wish to use a dedicated
-// parsing library to help implement their Serde deserializer.
-impl<'de> Deserializer<'de> {
-    // Look at the first character in the input without consuming it.
-    fn peek_char(&mut self) -> Result<char> {
-        self.input.chars().next().ok_or(Error::Eof)
+impl<'de> Deserializer {
+    fn peek_format(&mut self) -> Result<Format> {
+        todo!()
     }
 
-    // Consume the first character in the input.
-    fn next_char(&mut self) -> Result<char> {
-        let ch = self.peek_char()?;
-        self.input = &self.input[ch.len_utf8()..];
-        Ok(ch)
+    fn get_bytes(&mut self, n_bytes_to_read: u64) -> Result<Vec<u8>> {
+        let mut buf = vec![];
+        let mut chunk = self.take(n_bytes_to_read);
+        match chunk.read_to_end(&mut buf) {
+            Ok(_n) => Ok(buf),
+            Err(e) => Err(Error::Message(e.to_string())),
+        }
     }
 
-    // Parse the JSON identifier `true` or `false`.
-    fn parse_bool(&mut self) -> Result<bool> {
-        if self.input.starts_with("true") {
-            self.input = &self.input["true".len()..];
-            Ok(true)
-        } else if self.input.starts_with("false") {
-            self.input = &self.input["false".len()..];
-            Ok(false)
+    fn read_string_length(&mut self) -> Result<u32> {
+        let next_format = self.peek_format()?;
+
+        if let Format::Nil = next_format {
+            return Ok(0);
+        }
+
+        match Format::get_format(self)? {
+            Format::FixStr(len) => Ok(len as u32),
+            Format::FixArray(len) => Ok(len as u32),
+            Format::Str8 => Ok(ReadBytesExt::read_u8(self)? as u32),
+            Format::Str16 => {
+                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u32)
+            }
+            Format::Str32 => Ok(ReadBytesExt::read_u32::<BigEndian>(self)?),
+            Format::Nil => Ok(0),
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'string'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedString(formatted_err))
+            }
+        }
+    }
+
+    fn parse_string(&mut self) -> Result<String> {
+        let str_len = self.read_string_length()?;
+        let bytes = self.get_bytes(str_len as u64)?;
+        match String::from_utf8(bytes) {
+            Ok(s) => Ok(s),
+            Err(e) => Err(Error::Message(e.to_string())),
+        }
+    }
+
+    fn read_bytes_length(&mut self) -> Result<u32> {
+        let next_format = self.peek_format()?;
+
+        if let Format::Nil = next_format {
+            return Ok(0);
+        }
+
+        match Format::get_format(self)? {
+            Format::FixArray(len) => Ok(len as u32),
+            Format::Bin8 => Ok(ReadBytesExt::read_u8(self)? as u32),
+            Format::Bin16 => {
+                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u32)
+            }
+            Format::Bin32 => Ok(ReadBytesExt::read_u32::<BigEndian>(self)?),
+            Format::Nil => Ok(0),
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'bytes'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedBytes(formatted_err))
+            }
+        }
+    }
+
+    fn parse_unsigned(&mut self) -> Result<u64> {
+        let f = Format::get_format(self)?;
+        let prefix = f.to_u8();
+        if Format::is_positive_fixed_int(prefix) {
+            return Ok(prefix as u64);
+        } else if Format::is_negative_fixed_int(prefix) {
+            let formatted_err = format!(
+                "unsigned integer cannot be negative. {}",
+                get_error_message(f)
+            );
+
+            return Err(Error::ExpectedUInteger(formatted_err));
+        }
+
+        match f {
+            Format::Uint8 => Ok(ReadBytesExt::read_u8(self)? as u64),
+            Format::Uint16 => {
+                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u64)
+            }
+            Format::Uint32 => {
+                Ok(ReadBytesExt::read_u32::<BigEndian>(self)? as u64)
+            }
+            Format::Uint64 => Ok(ReadBytesExt::read_u64::<BigEndian>(self)?),
+            Format::Int8 => {
+                let int8 = ReadBytesExt::read_i8(self)?;
+
+                if int8 >= 0 {
+                    return Ok(int8 as u64);
+                }
+
+                let formatted_err = format!(
+                    "unsigned integer cannot be negative. {}",
+                    get_error_message(f)
+                );
+                Err(Error::ExpectedUInteger(formatted_err))
+            }
+            Format::Int16 => {
+                let int16 = ReadBytesExt::read_i16::<BigEndian>(self)?;
+
+                if int16 >= 0 {
+                    return Ok(int16 as u64);
+                }
+
+                let formatted_err = format!(
+                    "unsigned integer cannot be negative. {}",
+                    get_error_message(f)
+                );
+                Err(Error::ExpectedUInteger(formatted_err))
+            }
+            Format::Int32 => {
+                let int32 = ReadBytesExt::read_i32::<BigEndian>(self)?;
+
+                if int32 >= 0 {
+                    return Ok(int32 as u64);
+                }
+
+                let formatted_err = format!(
+                    "unsigned integer cannot be negative. {}",
+                    get_error_message(f)
+                );
+                Err(Error::ExpectedUInteger(formatted_err))
+            }
+            Format::Int64 => {
+                let int64 = ReadBytesExt::read_i64::<BigEndian>(self)?;
+
+                if int64 >= 0 {
+                    return Ok(int64 as u64);
+                }
+
+                let formatted_err = format!(
+                    "unsigned integer cannot be negative. {}",
+                    get_error_message(f)
+                );
+                Err(Error::ExpectedUInteger(formatted_err))
+            }
+
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'uint'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedUInteger(formatted_err))
+            }
+        }
+    }
+
+    fn parse_signed(&mut self) -> Result<i64> {
+        let f = Format::get_format(self)?;
+        let prefix = f.to_u8();
+        if Format::is_positive_fixed_int(prefix) {
+            Ok(prefix as i64)
+        } else if Format::is_negative_fixed_int(prefix) {
+            Ok((prefix as i8) as i64)
         } else {
-            Err(Error::ExpectedBoolean)
-        }
-    }
-
-    // Parse a group of decimal digits as an unsigned integer of type T.
-    //
-    // This implementation is a bit too lenient, for example `001` is not
-    // allowed in JSON. Also the various arithmetic operations can overflow and
-    // panic or return bogus data. But it is good enough for example code!
-    fn parse_unsigned<T>(&mut self) -> Result<T>
-    where
-        T: AddAssign<T> + MulAssign<T> + From<u8>,
-    {
-        let mut int = match self.next_char()? {
-            ch @ '0'..='9' => T::from(ch as u8 - b'0'),
-            _ => {
-                return Err(Error::ExpectedInteger);
-            }
-        };
-        loop {
-            match self.input.chars().next() {
-                Some(ch @ '0'..='9') => {
-                    self.input = &self.input[1..];
-                    int *= T::from(10);
-                    int += T::from(ch as u8 - b'0');
+            match f {
+                Format::Int8 => Ok(ReadBytesExt::read_i8(self)? as i64),
+                Format::Int16 => {
+                    Ok(ReadBytesExt::read_i16::<BigEndian>(self)? as i64)
                 }
-                _ => {
-                    return Ok(int);
+                Format::Int32 => {
+                    Ok(ReadBytesExt::read_i32::<BigEndian>(self)? as i64)
+                }
+                Format::Int64 => Ok(ReadBytesExt::read_i64::<BigEndian>(self)?),
+                Format::Uint8 => Ok(ReadBytesExt::read_u8(self)? as i64),
+                Format::Uint16 => {
+                    Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as i64)
+                }
+                Format::Uint32 => {
+                    Ok(ReadBytesExt::read_u32::<BigEndian>(self)? as i64)
+                }
+                Format::Uint64 => {
+                    let v = ReadBytesExt::read_u64::<BigEndian>(self)?;
+
+                    if v <= i64::MAX as u64 {
+                        Ok(v as i64)
+                    } else {
+                        let formatted_err = format!(
+                            "integer overflow: value = {}; bits = 64",
+                            v
+                        );
+                        Err(Error::Message(formatted_err))
+                    }
+                }
+                err_f => {
+                    let formatted_err = format!(
+                        "Property must be of type 'int'. {}",
+                        get_error_message(err_f)
+                    );
+                    Err(Error::ExpectedInteger(formatted_err))
                 }
             }
-        }
-    }
-
-    // Parse a possible minus sign followed by a group of decimal digits as a
-    // signed integer of type T.
-    fn parse_signed<T>(&mut self) -> Result<T>
-    where
-        T: Neg<Output = T> + AddAssign<T> + MulAssign<T> + From<i8>,
-    {
-        // Optional minus sign, delegate to `parse_unsigned`, negate if negative.
-        unimplemented!()
-    }
-
-    // Parse a string until the next '"' character.
-    //
-    // Makes no attempt to handle escape sequences. What did you expect? This is
-    // example code!
-    fn parse_string(&mut self) -> Result<&'de str> {
-        if self.next_char()? != '"' {
-            return Err(Error::ExpectedString);
-        }
-        match self.input.find('"') {
-            Some(len) => {
-                let s = &self.input[..len];
-                self.input = &self.input[len + 1..];
-                Ok(s)
-            }
-            None => Err(Error::Eof),
         }
     }
 }
 
-impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     type Error = Error;
 
     // Look at the input data to decide what Serde data model type to
@@ -145,60 +262,76 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        match self.peek_char()? {
-            'n' => self.deserialize_unit(visitor),
-            't' | 'f' => self.deserialize_bool(visitor),
-            '"' => self.deserialize_str(visitor),
-            '0'..='9' => self.deserialize_u64(visitor),
-            '-' => self.deserialize_i64(visitor),
-            '[' => self.deserialize_seq(visitor),
-            '{' => self.deserialize_map(visitor),
-            _ => Err(Error::Syntax),
-        }
+        todo!()
+        // match self.peek_format()? {
+        // 'n' => self.deserialize_unit(visitor),
+        // 't' | 'f' => self.deserialize_bool(visitor),
+        // '"' => self.deserialize_str(visitor),
+        // '0'..='9' => self.deserialize_u64(visitor),
+        // '-' => self.deserialize_i64(visitor),
+        // '[' => self.deserialize_seq(visitor),
+        // '{' => self.deserialize_map(visitor),
+        // _ => Err(Error::Syntax),
+        // }
     }
 
-    // Uses the `parse_bool` parsing function defined above to read the JSON
-    // identifier `true` or `false` from the input.
-    //
-    // Parsing refers to looking at the input and deciding that it contains the
-    // JSON value `true` or `false`.
-    //
-    // Deserialization refers to mapping that JSON value into Serde's data
-    // model by invoking one of the `Visitor` methods. In the case of JSON and
-    // bool that mapping is straightforward so the distinction may seem silly,
-    // but in other cases Deserializers sometimes perform non-obvious mappings.
-    // For example the TOML format has a Datetime type and Serde's data model
-    // does not. In the `toml` crate, a Datetime in the input is deserialized by
-    // mapping it to a Serde data model "struct" type with a special name and a
-    // single field containing the Datetime represented as a string.
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_bool(self.parse_bool()?)
+        match Format::get_format(self)? {
+            Format::True => visitor.visit_bool(true),
+            Format::False => visitor.visit_bool(false),
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'bool'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedBoolean(formatted_err))
+            }
+        }
     }
 
-    // The `parse_signed` function is generic over the integer type `T` so here
-    // it is invoked with `T=i8`. The next 8 methods are similar.
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i8(self.parse_signed()?)
+        let v = self.parse_signed()?;
+        if v <= i8::MAX as i64 && v >= i8::MIN as i64 {
+            visitor.visit_i8(v as i8)
+        } else {
+            let formatted_err =
+                format!("integer overflow: value = {}; bits = 8", v);
+            Err(Error::Message(formatted_err))
+        }
     }
 
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i16(self.parse_signed()?)
+        let v = self.parse_signed()?;
+        if v <= i16::MAX as i64 && v >= i16::MIN as i64 {
+            visitor.visit_i16(v as i16)
+        } else {
+            let formatted_err =
+                format!("integer overflow: value = {}; bits = 16", v);
+            Err(Error::Message(formatted_err))
+        }
     }
 
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i32(self.parse_signed()?)
+        let v = self.parse_signed()?;
+        if v <= i32::MAX as i64 && v >= i32::MIN as i64 {
+            visitor.visit_i32(v as i32)
+        } else {
+            let formatted_err =
+                format!("integer overflow: value = {}; bits = 32", v);
+            Err(Error::Message(formatted_err))
+        }
     }
 
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
@@ -212,21 +345,45 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u8(self.parse_unsigned()?)
+        let v = self.parse_unsigned()?;
+
+        if v <= u8::MAX as u64 && v >= u8::MIN as u64 {
+            visitor.visit_u8(v as u8)
+        } else {
+            let formatted_err =
+                format!("unsigned integer overflow: value = {}; bits = 8", v);
+            Err(Error::Message(formatted_err))
+        }
     }
 
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u16(self.parse_unsigned()?)
+        let v = self.parse_unsigned()?;
+
+        if v <= u16::MAX as u64 && v >= u16::MIN as u64 {
+            visitor.visit_u16(v as u16)
+        } else {
+            let formatted_err =
+                format!("unsigned integer overflow: value = {}; bits = 16", v);
+            Err(Error::Message(formatted_err))
+        }
     }
 
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u32(self.parse_unsigned()?)
+        let v = self.parse_unsigned()?;
+
+        if v <= u32::MAX as u64 && v >= u32::MIN as u64 {
+            visitor.visit_u32(v as u32)
+        } else {
+            let formatted_err =
+                format!("unsigned integer overflow: value = {}; bits = 32", v);
+            Err(Error::Message(formatted_err))
+        }
     }
 
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
@@ -236,30 +393,59 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_u64(self.parse_unsigned()?)
     }
 
-    // Float parsing is stupidly hard.
-    fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        match Format::get_format(self)? {
+            Format::Float32 => {
+                visitor.visit_f32(ReadBytesExt::read_f32::<BigEndian>(self)?)
+            }
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'float32'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedFloat(formatted_err))
+            }
+        }
     }
 
     // Float parsing is stupidly hard.
-    fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        match Format::get_format(self)? {
+            Format::Float64 => {
+                visitor.visit_f64(ReadBytesExt::read_f64::<BigEndian>(self)?)
+            }
+            Format::Float32 => visitor
+                .visit_f64(ReadBytesExt::read_f32::<BigEndian>(self)? as f64),
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'float64'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedFloat(formatted_err))
+            }
+        }
     }
 
     // The `Serializer` implementation on the previous page serialized chars as
     // single-character strings so handle that representation here.
-    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        // Parse a string, check that it is one character, call `visit_char`.
-        unimplemented!()
+        // TODO: maybe better implementation
+        let str = self.parse_string()?;
+
+        if str.len() == 1 {
+          visitor.visit_char(str.chars().last().unwrap())
+        } else {
+          Err(Error::ExpectedChar(format!("Expected char, found string: '{}'", str)))
+        }
     }
 
     // Refer to the "Understanding deserializer lifetimes" page for information
@@ -268,7 +454,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_borrowed_str(self.parse_string()?)
+        visitor.visit_borrowed_str(&self.parse_string()?)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -306,11 +492,14 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.starts_with("null") {
-            self.input = &self.input["null".len()..];
-            visitor.visit_none()
-        } else {
-            visitor.visit_some(self)
+        match self.peek_format()? {
+            Format::Nil => {
+              Format::get_format(self)?;
+              visitor.visit_none()
+            }
+            _ => {
+              visitor.visit_some(self)
+            }
         }
     }
 
@@ -319,12 +508,15 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        if self.input.starts_with("null") {
-            self.input = &self.input["null".len()..];
-            visitor.visit_unit()
-        } else {
-            Err(Error::ExpectedNull)
+      match Format::get_format(self)? {
+        Format::Nil => {
+          visitor.visit_unit()
         }
+        format => {
+          // TODO: better error messaging
+          Err(Error::ExpectedNull(format!("Expected null, found format: {}", format)))
+        }
+    }
     }
 
     // Unit struct means a named value containing no data.
@@ -339,9 +531,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.deserialize_unit(visitor)
     }
 
-    // As is done here, serializers are encouraged to treat newtype structs as
-    // insignificant wrappers around the data they contain. That means not
-    // parsing anything other than the contained value.
     fn deserialize_newtype_struct<V>(
         self,
         _name: &'static str,
@@ -497,23 +686,29 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
+impl Read for Deserializer {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.buffer.read(&mut *buf)
+    }
+}
+
 // In order to handle commas correctly when deserializing a JSON array or map,
 // we need to track whether we are on the first element or past the first
 // element.
-struct CommaSeparated<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct CommaSeparated<'a> {
+    de: &'a mut Deserializer,
     first: bool,
 }
 
-impl<'a, 'de> CommaSeparated<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>) -> Self {
+impl<'a, 'de> CommaSeparated<'a> {
+    fn new(de: &'a mut Deserializer) -> Self {
         CommaSeparated { de, first: true }
     }
 }
 
 // `SeqAccess` is provided to the `Visitor` to give it the ability to iterate
 // through elements of the sequence.
-impl<'de, 'a> SeqAccess<'de> for CommaSeparated<'a, 'de> {
+impl<'de, 'a> SeqAccess<'de> for CommaSeparated<'a> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
@@ -536,7 +731,7 @@ impl<'de, 'a> SeqAccess<'de> for CommaSeparated<'a, 'de> {
 
 // `MapAccess` is provided to the `Visitor` to give it the ability to iterate
 // through entries of the map.
-impl<'de, 'a> MapAccess<'de> for CommaSeparated<'a, 'de> {
+impl<'de, 'a> MapAccess<'de> for CommaSeparated<'a> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
@@ -571,12 +766,12 @@ impl<'de, 'a> MapAccess<'de> for CommaSeparated<'a, 'de> {
     }
 }
 
-struct Enum<'a, 'de: 'a> {
-    de: &'a mut Deserializer<'de>,
+struct Enum<'a> {
+    de: &'a mut Deserializer,
 }
 
-impl<'a, 'de> Enum<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>) -> Self {
+impl<'a> Enum<'a> {
+    fn new(de: &'a mut Deserializer) -> Self {
         Enum { de }
     }
 }
@@ -586,7 +781,7 @@ impl<'a, 'de> Enum<'a, 'de> {
 //
 // Note that all enum deserialization methods in Serde refer exclusively to the
 // "externally tagged" enum representation.
-impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
+impl<'de, 'a> EnumAccess<'de> for Enum<'a> {
     type Error = Error;
     type Variant = Self;
 
@@ -609,7 +804,7 @@ impl<'de, 'a> EnumAccess<'de> for Enum<'a, 'de> {
 
 // `VariantAccess` is provided to the `Visitor` to give it the ability to see
 // the content of the single variant that it decided to deserialize.
-impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
+impl<'de, 'a> VariantAccess<'de> for Enum<'a> {
     type Error = Error;
 
     // If the `Visitor` expected this variant to be a unit variant, the input
@@ -653,50 +848,4 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
-mod tests {
-    use super::from_str;
-    use serde_derive::Deserialize;
-
-    #[test]
-    fn test_struct() {
-        #[derive(Deserialize, PartialEq, Debug)]
-        struct Test {
-            int: u32,
-            seq: Vec<String>,
-        }
-
-        let j = r#"{"int":1,"seq":["a","b"]}"#;
-        let expected = Test {
-            int: 1,
-            seq: vec!["a".to_owned(), "b".to_owned()],
-        };
-        assert_eq!(expected, from_str(j).unwrap());
-    }
-
-    #[test]
-    fn test_enum() {
-        #[derive(Deserialize, PartialEq, Debug)]
-        enum E {
-            Unit,
-            Newtype(u32),
-            Tuple(u32, u32),
-            Struct { a: u32 },
-        }
-
-        let j = r#""Unit""#;
-        let expected = E::Unit;
-        assert_eq!(expected, from_str(j).unwrap());
-
-        let j = r#"{"Newtype":1}"#;
-        let expected = E::Newtype(1);
-        assert_eq!(expected, from_str(j).unwrap());
-
-        let j = r#"{"Tuple":[1,2]}"#;
-        let expected = E::Tuple(1, 2);
-        assert_eq!(expected, from_str(j).unwrap());
-
-        let j = r#"{"Struct":{"a":1}}"#;
-        let expected = E::Struct { a: 1 };
-        assert_eq!(expected, from_str(j).unwrap());
-    }
-}
+mod tests {}
