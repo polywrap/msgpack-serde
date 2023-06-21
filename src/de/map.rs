@@ -2,12 +2,12 @@ use serde::de::{DeserializeSeed, MapAccess};
 
 use crate::{Deserializer, error::{Result, Error}};
 
-pub struct ExtMapAccess<'a> {
+pub struct MapReadAccess<'a> {
   deserializer: &'a mut Deserializer,
   entries_in_map: u32,
 }
 
-impl<'a> ExtMapAccess<'a> {
+impl<'a> MapReadAccess<'a> {
   pub fn new(
       deserializer: &'a mut Deserializer,
       entries_in_map: u32,
@@ -19,7 +19,7 @@ impl<'a> ExtMapAccess<'a> {
   }
 }
 
-impl<'a, 'de> MapAccess<'de> for ExtMapAccess<'a> {
+impl<'a, 'de> MapAccess<'de> for MapReadAccess<'a> {
   type Error = Error;
 
   fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>

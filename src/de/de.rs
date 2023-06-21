@@ -3,13 +3,10 @@ use crate::{
     format::{ExtensionType, Format},
 };
 use byteorder::{BigEndian, ReadBytesExt};
-use serde::de::{self, Deserialize, Expected, Visitor};
-use std::{
-    fmt::format,
-    io::{Cursor, Read},
-};
+use serde::de::{self, Deserialize, Visitor};
+use std::io::{Cursor, Read};
 
-use super::{array::ArrayAccess, map::ExtMapAccess};
+use super::{array::ArrayReadAccess, map::MapReadAccess};
 
 pub struct Deserializer {
     buffer: Cursor<Vec<u8>>,
@@ -581,23 +578,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-        let arr_len = match Format::get_format(self)? {
-            Format::FixArray(len) => Ok(len as u32),
-            Format::Array16 => {
-                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u32)
-            }
-            Format::Array32 => Ok(ReadBytesExt::read_u32::<BigEndian>(self)?),
-            Format::Nil => Ok(0),
-            err_f => {
-                let formatted_err = format!(
-                    "Property must be of type 'array'. {}",
-                    get_error_message(err_f)
-                );
-                Err(Error::ExpectedArray(formatted_err))
-            }
-        }?;
-
-        visitor.visit_seq(ArrayAccess::new(self, arr_len))
+        let arr_len = self.read_array_length()?;
+        visitor.visit_seq(ArrayReadAccess::new(self, arr_len))
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
@@ -658,7 +640,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
 
         let map_len = self.read_map_length()?;
 
-        visitor.visit_map(ExtMapAccess::new(self, map_len))
+        visitor.visit_map(MapReadAccess::new(self, map_len))
     }
 
     fn deserialize_struct<V>(
@@ -670,7 +652,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-        self.deserialize_map(visitor)
+      let map_len = self.read_map_length()?;
+
+      visitor.visit_map(MapReadAccess::new(self, map_len))
     }
 
     fn deserialize_enum<V>(
@@ -712,13 +696,69 @@ impl Read for Deserializer {
 mod tests {
     use std::collections::{BTreeMap, HashMap};
 
+    use serde_derive::Deserialize;
+
     use crate::from_slice;
 
     #[test]
-    fn test_read_string() {
+    fn test_read_empty_string() {
+        let result: String = from_slice(&[160]).unwrap();
+        assert_eq!("".to_string(), result);
+    }
+
+    #[test]
+    fn test_read_string_5char() {
         let result: String =
-            from_slice(&[165, 72, 101, 108, 108, 111]).unwrap();
-        assert_eq!("Hello".to_string(), result);
+            from_slice(&[165, 104, 101, 108, 108, 111]).unwrap();
+        assert_eq!("hello".to_string(), result);
+    }
+
+    #[test]
+    fn test_read_string_11char() {
+        let result: String = from_slice(&[
+            171, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100,
+        ])
+        .unwrap();
+        assert_eq!("hello world".to_string(), result);
+    }
+
+    #[test]
+    fn test_read_string_31char() {
+        let result: String = from_slice(&[
+            191, 45, 84, 104, 105, 115, 32, 115, 116, 114, 105, 110, 103, 32,
+            99, 111, 110, 116, 97, 105, 110, 115, 32, 51, 49, 32, 99, 104, 97,
+            114, 115, 45,
+        ])
+        .unwrap();
+        assert_eq!("-This string contains 31 chars-".to_string(), result);
+    }
+
+    #[test]
+    fn test_read_string_255char() {
+        let result: String = from_slice(&[
+            217, 255, 84, 104, 105, 115, 32, 105, 115, 32, 97, 32, 115, 116,
+            114, 32, 56, 32, 115, 116, 114, 105, 110, 103, 32, 111, 102, 32,
+            50, 53, 53, 32, 98, 121, 116, 101, 115, 32, 65, 67, 53, 51, 76,
+            103, 120, 76, 76, 79, 75, 109, 48, 104, 102, 115, 80, 97, 49, 86,
+            48, 110, 102, 77, 106, 88, 116, 110, 109, 107, 69, 116, 116, 114,
+            117, 67, 80, 106, 99, 53, 49, 100, 116, 69, 77, 76, 82, 74, 73, 69,
+            117, 49, 89, 111, 82, 71, 100, 57, 111, 88, 110, 77, 52, 67, 120,
+            99, 73, 105, 84, 99, 57, 86, 50, 68, 110, 65, 105, 100, 90, 122,
+            50, 50, 102, 111, 73, 122, 99, 51, 107, 113, 72, 66, 111, 88, 103,
+            89, 115, 107, 101, 118, 102, 111, 74, 53, 82, 75, 89, 112, 53, 50,
+            113, 118, 111, 68, 80, 117, 102, 85, 101, 98, 76, 107, 115, 70,
+            108, 55, 97, 115, 116, 66, 78, 69, 110, 106, 80, 86, 85, 88, 50,
+            101, 51, 79, 57, 79, 54, 86, 75, 101, 85, 112, 66, 48, 105, 105,
+            72, 81, 88, 102, 122, 79, 79, 106, 84, 69, 75, 54, 88, 121, 54,
+            107, 115, 52, 122, 65, 71, 50, 77, 54, 106, 67, 76, 48, 49, 102,
+            108, 73, 74, 108, 120, 112, 108, 82, 88, 67, 86, 55, 32, 115, 97,
+            100, 115, 97, 100, 115, 97, 100, 115, 97, 100, 97, 115, 100, 97,
+            115, 97, 97, 97, 97, 97,
+        ])
+        .unwrap();
+        assert_eq!(concat!("This is a str 8 string of 255 bytes ",
+        "AC53LgxLLOKm0hfsPa1V0nfMjXtnmkEttruCPjc51dtEMLRJIEu1YoRGd9", "oXnM4CxcIiTc9V2DnAidZz22foIzc3kqHBoXgYskevfoJ5RK",
+        "Yp52qvoDPufUebLksFl7astBNEnjPVUX2e3O9O6VKeUpB0iiHQXfzOOjTEK6Xy6ks4zAG2M6jCL01flIJlxplRXCV7 sadsadsadsadasdasaaaaa").to_string(), result);
     }
 
     #[test]
@@ -840,5 +880,61 @@ mod tests {
         let result: u64 =
             from_slice(&[207, 255, 255, 255, 255, 255, 255, 255, 255]).unwrap();
         assert_eq!(u64::MAX, result);
+    }
+
+    #[test]
+    fn test_fixarray() {
+        let result: Vec<i32> =
+            from_slice(&[147, 1, 2, 206, 0, 8, 82, 65]).unwrap();
+        assert_eq!(vec![1, 2, 545345], result);
+    }
+
+    #[test]
+    fn test_array_16() {
+        let result: Vec<i32> = from_slice(&[
+            220, 0, 36, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+            17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+            34, 35, 36,
+        ])
+        .unwrap();
+        assert_eq!(
+            vec![
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+                19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+                35, 36,
+            ],
+            result
+        );
+    }
+
+    #[test]
+    fn test_read_struct() {
+      #[derive(Deserialize, PartialEq, Debug)]
+        struct Bar {
+            bar: u16,
+        }
+
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct Foo {
+            foo: Vec<Bar>,
+        }
+
+        let foo = Foo {
+            foo: vec![
+                Bar { bar: 2 },
+                Bar { bar: 4 },
+                Bar { bar: 6 },
+                Bar { bar: 8 },
+                Bar { bar: 10 },
+            ],
+        };
+
+        let result: Foo =
+            from_slice(&[
+              129, 163, 102, 111, 111, 149, 129, 163, 98, 97, 114, 2,
+              129, 163, 98, 97, 114, 4, 129, 163, 98, 97, 114, 6, 129,
+              163, 98, 97, 114, 8, 129, 163, 98, 97, 114, 10,
+          ]).unwrap();
+        assert_eq!(foo, result);
     }
 }
