@@ -730,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_map_8() {
+    fn test_read_ext_map_8() {
         let result: BTreeMap<i32, Vec<i32>> =
             from_slice(&[199, 11, 1, 130, 1, 147, 3, 5, 9, 2, 147, 1, 4, 7])
                 .unwrap();
@@ -739,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn test_read_map_16() {
+    fn test_read_ext_map_16() {
         let mut map2: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
         for i in 0..16 {
             map2.insert(i, vec![i, i + 1, i + 2]);
@@ -756,7 +756,24 @@ mod tests {
     }
 
     #[test]
-    fn test_read_with_hashmap() {
+    fn test_read_ext_generic_map_nested() {
+        let mut root_map: BTreeMap<String, BTreeMap<String, u8>> =
+            BTreeMap::new();
+        let mut sub_map: BTreeMap<String, u8> = BTreeMap::new();
+        sub_map.insert("Hello".to_string(), 1);
+        sub_map.insert("Heyo".to_string(), 50);
+        root_map.insert("Nested".to_string(), sub_map);
+
+        let result: BTreeMap<String, BTreeMap<String, u8>> = from_slice(&[
+            199, 25, 1, 129, 166, 78, 101, 115, 116, 101, 100, 199, 14, 1, 130,
+            165, 72, 101, 108, 108, 111, 1, 164, 72, 101, 121, 111, 50,
+        ])
+        .unwrap();
+        assert_eq!(root_map, result);
+    }
+
+    #[test]
+    fn test_read_ext_map_with_hashmap() {
         let result: HashMap<i32, Vec<i32>> =
             from_slice(&[199, 11, 1, 130, 1, 147, 3, 5, 9, 2, 147, 1, 4, 7])
                 .unwrap();
