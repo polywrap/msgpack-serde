@@ -229,6 +229,7 @@ pub enum Error {
     ExpectedArrayComma(String),
     ExpectedArrayEnd(String),
     ExpectedMap(String),
+    ExpectedExt(String),
     ExpectedMapColon(String),
     ExpectedMapComma(String),
     ExpectedMapEnd(String),

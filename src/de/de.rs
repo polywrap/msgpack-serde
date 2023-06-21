@@ -1,10 +1,13 @@
 use crate::{
     error::{get_error_message, Error, Result},
-    format::Format,
+    format::{ExtensionType, Format},
 };
 use byteorder::{BigEndian, ReadBytesExt};
-use serde::de::{self, Deserialize, Visitor};
-use std::io::{Cursor, Read};
+use serde::de::{self, Deserialize, Expected, Visitor};
+use std::{
+    fmt::format,
+    io::{Cursor, Read},
+};
 
 use super::{array::ArrayAccess, map::ExtMapAccess};
 
@@ -35,7 +38,9 @@ where
 {
     let mut deserializer = Deserializer::from_slice(buffer);
     let t = T::deserialize(&mut deserializer)?;
-    if deserializer.buffer.position() as usize == deserializer.buffer.get_ref().len() {
+    if deserializer.buffer.position() as usize
+        == deserializer.buffer.get_ref().len()
+    {
         Ok(t)
     } else {
         Err(Error::TrailingCharacters)
@@ -116,6 +121,30 @@ impl<'de> Deserializer {
         match String::from_utf8(bytes) {
             Ok(s) => Ok(s),
             Err(e) => Err(Error::Message(e.to_string())),
+        }
+    }
+
+    fn read_map_length(&mut self) -> Result<u32> {
+        let next_format = self.peek_format()?;
+
+        if let Format::Nil = next_format {
+            return Ok(0);
+        }
+
+        match Format::get_format(self)? {
+            Format::FixMap(len) => Ok(len as u32),
+            Format::Map16 => {
+                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u32)
+            }
+            Format::Map32 => Ok(ReadBytesExt::read_u32::<BigEndian>(self)?),
+            Format::Nil => Ok(0),
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'map'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedMap(formatted_err))
+            }
         }
     }
 
@@ -594,21 +623,40 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-        let map_len = match Format::get_format(self)? {
-            Format::FixMap(len) => Ok(len as u32),
-            Format::Map16 => {
-                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u32)
-            }
-            Format::Map32 => Ok(ReadBytesExt::read_u32::<BigEndian>(self)?),
-            Format::Nil => Ok(0),
+        let format = Format::get_format(self)?;
+
+        // TODO: accept non-ext maps?
+
+        let _byte_length = match format {
+            Format::FixExt1 => 1,
+            Format::FixExt2 => 2,
+            Format::FixExt4 => 4,
+            Format::FixExt8 => 8,
+            Format::FixExt16 => 16,
+            Format::Ext8 => ReadBytesExt::read_u8(self)? as u32,
+            Format::Ext16 => ReadBytesExt::read_u16::<BigEndian>(self)? as u32,
+            Format::Ext32 => ReadBytesExt::read_u32::<BigEndian>(self)?,
             err_f => {
                 let formatted_err = format!(
-                    "Property must be of type 'map'. {}",
+                    "Property must be of type 'ext generic map'. {}",
                     get_error_message(err_f)
                 );
-                Err(Error::ExpectedMap(formatted_err))
+                return Err(Error::ExpectedExt(formatted_err));
             }
-        }?;
+        };
+
+        // Get the extension type
+        let ext_type = ReadBytesExt::read_u8(self)?;
+
+        if ext_type != ExtensionType::GenericMap.to_u8() {
+            let formatted_err = format!(
+                "Extension must be of type 'ext generic map'. Found {}",
+                ext_type
+            );
+            return Err(Error::ExpectedExt(formatted_err));
+        }
+
+        let map_len = self.read_map_length()?;
 
         visitor.visit_map(ExtMapAccess::new(self, map_len))
     }
@@ -662,7 +710,7 @@ impl Read for Deserializer {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     use crate::from_slice;
 
@@ -675,22 +723,45 @@ mod tests {
 
     #[test]
     fn test_read_array() {
-        let result: Vec<i32> = from_slice(
-            &[221, 0, 0, 0, 3, 1, 2, 206, 0, 8, 82, 65]
-        ).unwrap();
+        let result: Vec<i32> =
+            from_slice(&[221, 0, 0, 0, 3, 1, 2, 206, 0, 8, 82, 65]).unwrap();
         let input_arr: Vec<i32> = vec![1, 2, 545345];
         assert_eq!(input_arr, result);
     }
 
     #[test]
-    fn test_read_map() {
-        let result: BTreeMap<String, Vec<i32>> = from_slice(
-            &[
-                223, 0, 0, 0, 1, 163, 102, 111, 111, 221, 0, 0, 0, 3, 1, 2,
-                206, 0, 8, 82, 65,
-            ]
-        ).unwrap();
-        assert_eq!(result[&"foo".to_string()], vec![1, 2, 545345]);
+    fn test_read_map_8() {
+        let result: BTreeMap<i32, Vec<i32>> =
+            from_slice(&[199, 11, 1, 130, 1, 147, 3, 5, 9, 2, 147, 1, 4, 7])
+                .unwrap();
+        assert_eq!(result[&1], vec![3, 5, 9]);
+        assert_eq!(result[&2], vec![1, 4, 7]);
+    }
+
+    #[test]
+    fn test_read_map_16() {
+        let mut map2: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+        for i in 0..16 {
+            map2.insert(i, vec![i, i + 1, i + 2]);
+        }
+        let result: BTreeMap<i32, Vec<i32>> = from_slice(&[
+            199, 83, 1, 222, 0, 16, 0, 147, 0, 1, 2, 1, 147, 1, 2, 3, 2, 147,
+            2, 3, 4, 3, 147, 3, 4, 5, 4, 147, 4, 5, 6, 5, 147, 5, 6, 7, 6, 147,
+            6, 7, 8, 7, 147, 7, 8, 9, 8, 147, 8, 9, 10, 9, 147, 9, 10, 11, 10,
+            147, 10, 11, 12, 11, 147, 11, 12, 13, 12, 147, 12, 13, 14, 13, 147,
+            13, 14, 15, 14, 147, 14, 15, 16, 15, 147, 15, 16, 17,
+        ])
+        .unwrap();
+        assert_eq!(map2, result);
+    }
+
+    #[test]
+    fn test_read_with_hashmap() {
+        let result: HashMap<i32, Vec<i32>> =
+            from_slice(&[199, 11, 1, 130, 1, 147, 3, 5, 9, 2, 147, 1, 4, 7])
+                .unwrap();
+        assert_eq!(result[&1], vec![3, 5, 9]);
+        assert_eq!(result[&2], vec![1, 4, 7]);
     }
 
     #[test]
@@ -743,16 +814,14 @@ mod tests {
 
     #[test]
     fn test_read_u32() {
-        let result: u32 =
-            from_slice(&[206, 255, 255, 255, 255]).unwrap();
+        let result: u32 = from_slice(&[206, 255, 255, 255, 255]).unwrap();
         assert_eq!(u32::MAX, result);
     }
 
     #[test]
     fn test_read_u64() {
-        let result: u64 = from_slice(
-            &[207, 255, 255, 255, 255, 255, 255, 255, 255]
-        ).unwrap();
+        let result: u64 =
+            from_slice(&[207, 255, 255, 255, 255, 255, 255, 255, 255]).unwrap();
         assert_eq!(u64::MAX, result);
     }
 }
