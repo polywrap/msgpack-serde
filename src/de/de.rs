@@ -4,10 +4,11 @@ use crate::{
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::de::{
-    self, Deserialize, DeserializeSeed, EnumAccess, IntoDeserializer,
-    MapAccess, SeqAccess, VariantAccess, Visitor,
+    self, Deserialize, Visitor,
 };
 use std::io::{Cursor, Read};
+
+use super::{array::ArrayAccess, map::ExtMapAccess};
 
 pub struct Deserializer {
     buffer: Cursor<Vec<u8>>,
@@ -279,24 +280,11 @@ impl<'de> Deserializer {
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     type Error = Error;
 
-    // Look at the input data to decide what Serde data model type to
-    // deserialize as. Not all data formats are able to support this operation.
-    // Formats that support `deserialize_any` are known as self-describing.
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
         todo!()
-        // match self.peek_format()? {
-        // 'n' => self.deserialize_unit(visitor),
-        // 't' | 'f' => self.deserialize_bool(visitor),
-        // '"' => self.deserialize_str(visitor),
-        // '0'..='9' => self.deserialize_u64(visitor),
-        // '-' => self.deserialize_i64(visitor),
-        // '[' => self.deserialize_seq(visitor),
-        // '{' => self.deserialize_map(visitor),
-        // _ => Err(Error::Syntax),
-        // }
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
@@ -621,12 +609,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
       visitor.visit_map(ExtMapAccess::new(self, map_len))
     }
 
-    // Structs look just like maps in JSON.
-    //
-    // Notice the `fields` parameter - a "struct" in the Serde data model means
-    // that the `Deserialize` implementation is required to know what the fields
-    // are before even looking at the input data. Any key-value pairing in which
-    // the fields cannot be known ahead of time is probably a map.
     fn deserialize_struct<V>(
         self,
         _name: &'static str,
@@ -669,162 +651,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
 impl Read for Deserializer {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         self.buffer.read(&mut *buf)
-    }
-}
-
-struct ArrayAccess<'a> {
-    deserializer: &'a mut Deserializer,
-    elements_in_arr: u32,
-}
-
-impl<'a> ArrayAccess<'a> {
-    pub fn new(
-        deserializer: &'a mut Deserializer,
-        elements_in_arr: u32,
-    ) -> Self {
-        Self {
-            deserializer,
-            elements_in_arr,
-        }
-    }
-}
-
-impl<'a, 'de> SeqAccess<'de> for ArrayAccess<'a> {
-    type Error = Error;
-
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        if self.elements_in_arr == 0 {
-            return Ok(None);
-        }
-
-        self.elements_in_arr -= 1;
-        seed.deserialize(&mut *self.deserializer).map(Some)
-    }
-}
-
-struct ExtMapAccess<'a> {
-  deserializer: &'a mut Deserializer,
-  entries_in_map: u32,
-}
-
-impl<'a> ExtMapAccess<'a> {
-  pub fn new(
-      deserializer: &'a mut Deserializer,
-      entries_in_map: u32,
-  ) -> Self {
-      Self {
-          deserializer,
-          entries_in_map,
-      }
-  }
-}
-
-impl<'a, 'de> MapAccess<'de> for ExtMapAccess<'a> {
-    type Error = Error;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
-    where
-        K: DeserializeSeed<'de>,
-    {
-        if self.entries_in_map == 0 {
-            return Ok(None);
-        }
-
-        seed.deserialize(&mut *self.deserializer).map(Some)
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
-    where
-        V: DeserializeSeed<'de>,
-    {
-        self.entries_in_map -= 1;
-        seed.deserialize(&mut *self.deserializer)
-    }
-}
-
-struct StructAccess<'a> {
-  deserializer: &'a mut Deserializer,
-  entries_in_map: u32,
-}
-
-impl<'a, 'de> MapAccess<'de> for StructAccess<'a> {
-    type Error = Error;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
-    where
-        K: DeserializeSeed<'de>,
-    {
-        if self.entries_in_map == 0 {
-            return Ok(None);
-        }
-
-        seed.deserialize(&mut *self.deserializer).map(Some)
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
-    where
-        V: DeserializeSeed<'de>,
-    {
-        self.entries_in_map -= 1;
-        seed.deserialize(&mut *self.deserializer)
-    }
-}
-
-struct Enum<'a> {
-    de: &'a mut Deserializer,
-}
-
-impl<'a> Enum<'a> {
-    fn new(de: &'a mut Deserializer) -> Self {
-        Enum { de }
-    }
-}
-
-impl<'de, 'a> EnumAccess<'de> for Enum<'a> {
-    type Error = Error;
-    type Variant = Self;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant)>
-    where
-        V: DeserializeSeed<'de>,
-    {
-        todo!()
-    }
-}
-
-impl<'de, 'a> VariantAccess<'de> for Enum<'a> {
-    type Error = Error;
-
-    fn unit_variant(self) -> Result<()> {
-        todo!()
-    }
-
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
-    where
-        T: DeserializeSeed<'de>,
-    {
-      todo!()
-    }
-
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-      todo!()
-    }
-
-    fn struct_variant<V>(
-        self,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-      todo!()
     }
 }
 
