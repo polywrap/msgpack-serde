@@ -3,9 +3,7 @@ use crate::{
     format::Format,
 };
 use byteorder::{BigEndian, ReadBytesExt};
-use serde::de::{
-    self, Deserialize, Visitor,
-};
+use serde::de::{self, Deserialize, Visitor};
 use std::io::{Cursor, Read};
 
 use super::{array::ArrayAccess, map::ExtMapAccess};
@@ -37,7 +35,7 @@ where
 {
     let mut deserializer = Deserializer::from_slice(buffer);
     let t = T::deserialize(&mut deserializer)?;
-    if deserializer.buffer.get_ref().len() == 0 {
+    if deserializer.buffer.position() as usize == deserializer.buffer.get_ref().len() {
         Ok(t)
     } else {
         Err(Error::TrailingCharacters)
@@ -46,7 +44,11 @@ where
 
 impl<'de> Deserializer {
     fn peek_format(&mut self) -> Result<Format> {
-        todo!()
+        let position = self.buffer.position();
+        let format = Format::get_format(self)?;
+        self.buffer.set_position(position);
+
+        Ok(format)
     }
 
     fn read_array_length(&mut self) -> Result<u32> {
@@ -592,21 +594,23 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-      let map_len = match Format::get_format(self)? {
-          Format::FixMap(len) => Ok(len as u32),
-          Format::Map16 => Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u32),
-          Format::Map32 => Ok(ReadBytesExt::read_u32::<BigEndian>(self)?),
-          Format::Nil => Ok(0),
-          err_f => {
-              let formatted_err = format!(
-                "Property must be of type 'map'. {}",
-                get_error_message(err_f)
-              );
-              Err(Error::ExpectedMap(formatted_err))
-          },
-      }?;
+        let map_len = match Format::get_format(self)? {
+            Format::FixMap(len) => Ok(len as u32),
+            Format::Map16 => {
+                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u32)
+            }
+            Format::Map32 => Ok(ReadBytesExt::read_u32::<BigEndian>(self)?),
+            Format::Nil => Ok(0),
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'map'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedMap(formatted_err))
+            }
+        }?;
 
-      visitor.visit_map(ExtMapAccess::new(self, map_len))
+        visitor.visit_map(ExtMapAccess::new(self, map_len))
     }
 
     fn deserialize_struct<V>(
@@ -657,4 +661,98 @@ impl Read for Deserializer {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::from_slice;
+
+    #[test]
+    fn test_read_string() {
+        let result: String =
+            from_slice(&[165, 72, 101, 108, 108, 111]).unwrap();
+        assert_eq!("Hello".to_string(), result);
+    }
+
+    #[test]
+    fn test_read_array() {
+        let result: Vec<i32> = from_slice(
+            &[221, 0, 0, 0, 3, 1, 2, 206, 0, 8, 82, 65]
+        ).unwrap();
+        let input_arr: Vec<i32> = vec![1, 2, 545345];
+        assert_eq!(input_arr, result);
+    }
+
+    #[test]
+    fn test_read_map() {
+        let result: BTreeMap<String, Vec<i32>> = from_slice(
+            &[
+                223, 0, 0, 0, 1, 163, 102, 111, 111, 221, 0, 0, 0, 3, 1, 2,
+                206, 0, 8, 82, 65,
+            ]
+        ).unwrap();
+        assert_eq!(result[&"foo".to_string()], vec![1, 2, 545345]);
+    }
+
+    #[test]
+    fn test_read_bool_true() {
+        let result: bool = from_slice(&[195]).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_read_bool_false() {
+        let result: bool = from_slice(&[194]).unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_read_i8() {
+        let result: i8 = from_slice(&[208, 128]).unwrap();
+        assert_eq!(i8::MIN, result);
+    }
+
+    #[test]
+    fn test_read_i16() {
+        let result: i16 = from_slice(&[209, 128, 0]).unwrap();
+        assert_eq!(i16::MIN, result);
+    }
+
+    #[test]
+    fn test_read_i32() {
+        let result: i32 = from_slice(&[210, 128, 0, 0, 0]).unwrap();
+        assert_eq!(i32::MIN, result);
+    }
+
+    #[test]
+    fn test_read_i64() {
+        let result: i64 = from_slice(&[211, 128, 0, 0, 0, 0, 0, 0, 0]).unwrap();
+        assert_eq!(i64::MIN, result);
+    }
+
+    #[test]
+    fn test_read_u8() {
+        let result: u8 = from_slice(&[204, 255]).unwrap();
+        assert_eq!(u8::MAX, result);
+    }
+
+    #[test]
+    fn test_read_u16() {
+        let result: u16 = from_slice(&[205, 255, 255]).unwrap();
+        assert_eq!(u16::MAX, result);
+    }
+
+    #[test]
+    fn test_read_u32() {
+        let result: u32 =
+            from_slice(&[206, 255, 255, 255, 255]).unwrap();
+        assert_eq!(u32::MAX, result);
+    }
+
+    #[test]
+    fn test_read_u64() {
+        let result: u64 = from_slice(
+            &[207, 255, 255, 255, 255, 255, 255, 255, 255]
+        ).unwrap();
+        assert_eq!(u64::MAX, result);
+    }
+}
