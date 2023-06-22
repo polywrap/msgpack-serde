@@ -3,13 +3,15 @@ use crate::{
     format::{ExtensionType, Format},
 };
 use byteorder::{BigEndian, ReadBytesExt};
-use serde::de::{self, Deserialize, Visitor};
-use std::io::{Cursor, Read};
+use serde::de::{self, Deserialize, IntoDeserializer, Visitor};
+use std::{
+    io::{Cursor, Read},
+};
 
 use super::{array::ArrayReadAccess, map::MapReadAccess};
 
 pub struct Deserializer {
-    buffer: Cursor<Vec<u8>>,
+    pub buffer: Cursor<Vec<u8>>,
 }
 
 impl Default for Deserializer {
@@ -308,7 +310,7 @@ impl<'de> Deserializer {
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     type Error = Error;
 
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_any<V>(self, _: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -571,9 +573,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_newtype_struct(self)
     }
 
-    // Deserialization of compound types like sequences and maps happens by
-    // passing the visitor an "Access" object that gives it the ability to
-    // iterate through the data contained in the sequence.
     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -582,7 +581,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         visitor.visit_seq(ArrayReadAccess::new(self, arr_len))
     }
 
-    fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
+    fn deserialize_tuple<V>(self, _len: usize, _: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -593,7 +592,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         self,
         _name: &'static str,
         _len: usize,
-        visitor: V,
+        _: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -652,21 +651,55 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-      let map_len = self.read_map_length()?;
+        let map_len = self.read_map_length()?;
 
-      visitor.visit_map(MapReadAccess::new(self, map_len))
+        visitor.visit_map(MapReadAccess::new(self, map_len))
     }
 
     fn deserialize_enum<V>(
         self,
         _name: &'static str,
-        _variants: &'static [&'static str],
+        variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        match self.peek_format()? {
+            Format::Uint8
+            | Format::Uint16
+            | Format::Uint32
+            | Format::Uint64
+            | Format::Int8
+            | Format::Int16
+            | Format::Int32
+            | Format::Int64
+            | Format::NegativeFixInt(_)
+            | Format::PositiveFixInt(_) => {
+                let index = self.parse_unsigned()?;
+                let variant = variants.get(index as usize);
+
+                if let Some(variant) = variant {
+                    let variant = variant.to_string();
+                    visitor.visit_enum(variant.into_deserializer())
+                } else {
+                    // TODO: better error handling
+                    Err(Error::ExpectedUInteger(format!(
+                        "Expected enum variant as an unsigned integer"
+                    )))
+                }
+            }
+            Format::Str8
+            | Format::Str16
+            | Format::Str32
+            | Format::FixStr(_) => {
+                visitor.visit_enum(self.parse_string()?.into_deserializer())
+            }
+            format => Err(Error::Message(format!(
+                "Expected valid enum variant, found: {}",
+                format
+            ))),
+        }
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
@@ -676,7 +709,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         self.deserialize_str(visitor)
     }
 
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
+    fn deserialize_ignored_any<V>(self, _: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -909,7 +942,7 @@ mod tests {
 
     #[test]
     fn test_read_struct() {
-      #[derive(Deserialize, PartialEq, Debug)]
+        #[derive(Deserialize, PartialEq, Debug)]
         struct Bar {
             bar: u16,
         }
@@ -929,12 +962,42 @@ mod tests {
             ],
         };
 
-        let result: Foo =
-            from_slice(&[
-              129, 163, 102, 111, 111, 149, 129, 163, 98, 97, 114, 2,
-              129, 163, 98, 97, 114, 4, 129, 163, 98, 97, 114, 6, 129,
-              163, 98, 97, 114, 8, 129, 163, 98, 97, 114, 10,
-          ]).unwrap();
+        let result: Foo = from_slice(&[
+            129, 163, 102, 111, 111, 149, 129, 163, 98, 97, 114, 2, 129, 163,
+            98, 97, 114, 4, 129, 163, 98, 97, 114, 6, 129, 163, 98, 97, 114, 8,
+            129, 163, 98, 97, 114, 10,
+        ])
+        .unwrap();
+        assert_eq!(foo, result);
+    }
+
+    #[test]
+    fn test_read_enum_number() {
+        #[derive(Deserialize, PartialEq, Debug)]
+        enum Foo {
+            _FIRST,
+            SECOND,
+            _THIRD,
+        }
+
+        let foo = Foo::SECOND;
+
+        let result: Foo = from_slice(&[1]).unwrap();
+        assert_eq!(foo, result);
+    }
+
+    #[test]
+    fn test_read_enum_string() {
+      #[derive(Deserialize, PartialEq, Debug)]
+        enum Foo {
+            _FIRST,
+            SECOND,
+            _THIRD,
+        }
+
+        let foo = Foo::SECOND;
+
+        let result: Foo = from_slice(&[166, 83, 69, 67, 79, 78, 68]).unwrap();
         assert_eq!(foo, result);
     }
 }

@@ -711,17 +711,15 @@ mod tests {
             ],
         };
 
-        let cases = [
-            Case::new(
-                "struct",
-                foo,
-                &[
-                    129, 163, 102, 111, 111, 149, 129, 163, 98, 97, 114, 2,
-                    129, 163, 98, 97, 114, 4, 129, 163, 98, 97, 114, 6, 129,
-                    163, 98, 97, 114, 8, 129, 163, 98, 97, 114, 10,
-                ],
-            )
-        ];
+        let cases = [Case::new(
+            "struct",
+            foo,
+            &[
+                129, 163, 102, 111, 111, 149, 129, 163, 98, 97, 114, 2, 129,
+                163, 98, 97, 114, 4, 129, 163, 98, 97, 114, 6, 129, 163, 98,
+                97, 114, 8, 129, 163, 98, 97, 114, 10,
+            ],
+        )];
 
         for case in cases {
             let result = to_vec(&case.input).unwrap();
@@ -781,6 +779,29 @@ mod tests {
                 130, 165, 72, 101, 108, 108, 111, 1, 164, 72, 101, 121, 111,
                 50,
             ],
+        )];
+
+        for case in cases {
+            let result = to_vec(&case.input).unwrap();
+            assert_eq!(case.want, result.as_slice());
+        }
+    }
+
+    #[test]
+    fn test_write_enum() {
+        #[derive(Serialize)]
+        enum Foo {
+            _FIRST,
+            SECOND,
+            _THIRD,
+        }
+
+        let foo = Foo::SECOND;
+
+        let cases = [Case::new(
+            "enums",
+            foo,
+            &[1],
         )];
 
         for case in cases {
