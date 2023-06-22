@@ -1,16 +1,13 @@
 [package]
-name = "serde-example"
+name = "polywrap_msgpack_serde"
 version = "0.1.0"
-authors = ["David Tolnay <dtolnay@gmail.com>"]
+authors = ["Nestor Amesty <nestor@polywrap.io>"]
 categories = ["encoding"]
-description = "An example Serializer and Deserializer data format for Serde"
-documentation = "https://serde.rs/data-format.html"
+description = "An msgpack Serializer and Deserializer data format with Serde for Polywrap"
 edition = "2021"
-keywords = ["serde"]
+keywords = ["serde", "encoding", "decoding", "serialization", "deserialization"]
 license = "MIT OR Apache-2.0"
 publish = false
-repository = "https://github.com/serde-rs/example-format"
-rust-version = "1.56"
 
 [dependencies]
 serde = { version = "1.0.136", default-features = false, features = ["derive"] }
@@ -21,9 +18,6 @@ num-traits = { version = "0.2.14", default-features = false }
 bigdecimal = { version = "0.3.0", default-features = false, features = ["serde"] }
 serde_json = { version = "1.0.74", default-features = false, features = ["alloc"] }
 serde_bytes = "0.11.9"
-
-[lib]
-doc-scrape-examples = false
 
 [dev-dependencies]
 serde_derive = "1.0"
