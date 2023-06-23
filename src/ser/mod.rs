@@ -127,20 +127,22 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     fn serialize_u64(self, v: u64) -> Result<()> {
         if v < 1 << 7 {
-            Ok(self.write_positive_fixed_int(v as u8)?)
+            self.write_positive_fixed_int(v as u8)?
         } else if v <= u8::MAX as u64 {
             Format::set_format(self, Format::Uint8)?;
-            Ok(WriteBytesExt::write_u8(self, v as u8)?)
+            WriteBytesExt::write_u8(self, v as u8)?
         } else if v <= u16::MAX as u64 {
             Format::set_format(self, Format::Uint16)?;
-            Ok(WriteBytesExt::write_u16::<BigEndian>(self, v as u16)?)
+            WriteBytesExt::write_u16::<BigEndian>(self, v as u16)?
         } else if v <= u32::MAX as u64 {
             Format::set_format(self, Format::Uint32)?;
-            Ok(WriteBytesExt::write_u32::<BigEndian>(self, v as u32)?)
+            WriteBytesExt::write_u32::<BigEndian>(self, v as u32)?
         } else {
             Format::set_format(self, Format::Uint64)?;
-            Ok(WriteBytesExt::write_u64::<BigEndian>(self, v)?)
+            WriteBytesExt::write_u64::<BigEndian>(self, v)?
         }
+
+        Ok(())
     }
 
     fn serialize_f32(self, v: f32) -> Result<()> {
@@ -248,11 +250,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         value.serialize(self)
     }
 
-    // Note that newtype variant (and all of the other variant serialization
-    // methods) refer exclusively to the "externally tagged" enum
-    // representation.
-    //
-    // Serialize this to JSON in externally tagged form as `{ NAME: VALUE }`.
     fn serialize_newtype_variant<T>(
         self,
         _name: &'static str,
@@ -284,7 +281,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         todo!()
     }
 
-    // this method is only responsible for the externally tagged representation.
     fn serialize_tuple_variant(
         self,
         _name: &'static str,
@@ -309,8 +305,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(struct_ser)
     }
 
-    // Struct variants are represented in JSON as `{ NAME: { K: V, ... } }`.
-    // This is the externally tagged representation.
     fn serialize_struct_variant(
         self,
         _name: &'static str,
