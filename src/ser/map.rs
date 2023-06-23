@@ -5,10 +5,8 @@ use serde::{ser, Serialize};
 
 use crate::{
     error::{EncodeError, Error},
-    format::{ExtensionType, Format},
+    format::{ExtensionType, Format}, Serializer,
 };
-
-use super::ser::Serializer;
 
 pub struct MapSerializer<'a> {
     map_serializer: Serializer,

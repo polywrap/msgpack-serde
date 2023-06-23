@@ -5,10 +5,8 @@ use serde::{ser, Serialize};
 
 use crate::{
     error::{Error, Result},
-    format::Format,
+    format::Format, Serializer,
 };
-
-use super::ser::Serializer;
 
 pub struct ArraySerializer<'a> {
     array_len: u32,

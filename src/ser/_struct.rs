@@ -2,9 +2,9 @@ use std::io::Write;
 
 use serde::{ser, Serialize};
 
-use crate::error::Error;
+use crate::{error::Error, Serializer};
 
-use super::{map::MapSerializer, ser::Serializer};
+use super::{map::MapSerializer};
 
 pub struct StructSerializer<'a> {
     entries: u32,
