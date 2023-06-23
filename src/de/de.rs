@@ -719,9 +719,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
                     visitor.visit_enum(variant.into_deserializer())
                 } else {
                     // TODO: better error handling
-                    Err(Error::ExpectedUInteger(format!(
-                        "Expected enum variant as an unsigned integer"
-                    )))
+                    Err(Error::ExpectedUInteger("Expected enum variant as an unsigned integer".to_string()))
                 }
             }
             Format::Str8
