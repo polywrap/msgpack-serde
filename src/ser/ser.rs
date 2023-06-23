@@ -827,11 +827,11 @@ mod tests {
     #[test]
     fn test_bigint() {
         use num_bigint::BigInt;
-        use crate::wrappers::bigint::bigint_serialize;
+        use crate::wrappers::polywrap_bigint;
 
         #[derive(Serialize)]
         struct Foo {
-          #[serde(serialize_with="bigint_serialize")]
+          #[serde(with="polywrap_bigint")]
           big_int: BigInt
         }
 
@@ -852,11 +852,11 @@ mod tests {
     #[test]
     fn test_json() {
       use serde_json::Value;
-      use crate::wrappers::json::json_serialize;
+      use crate::wrappers::polywrap_json;
 
       #[derive(Serialize)]
       struct Foo {
-        #[serde(serialize_with="json_serialize")]
+        #[serde(with="polywrap_json")]
         json: Value
       }
 

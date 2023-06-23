@@ -3,15 +3,23 @@ use std::{
 };
 
 use serde_json::Value;
-use serde::{de::Visitor, Deserialize, Serialize, Serializer};
+use serde::{de::Visitor, Deserialize, Serialize, Serializer, Deserializer};
 
+#[derive(PartialEq, Debug)]
 pub struct JSON(pub Value);
 
-pub fn json_serialize<S>(x: &Value, s: S) -> Result<S::Ok, S::Error>
+pub fn serialize<S>(x: &Value, s: S) -> Result<S::Ok, S::Error>
 where
   S: Serializer,
 {
   s.serialize_str(&x.to_string())
+}
+
+pub fn deserialize<'de, D>(deserializer: D) -> Result<serde_json::Value, D::Error>
+where
+  D: Deserializer<'de>,
+{
+  Ok(deserializer.deserialize_str(JSONStrVisitor)?.0)
 }
 
 impl Serialize for JSON {

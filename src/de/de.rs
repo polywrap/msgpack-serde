@@ -1045,21 +1045,78 @@ mod tests {
 
     #[test]
     fn test_bigint() {
-      let foo = BigIntWrapper(
-        num_bigint::BigInt::from_str("170141183460469231731687303715884105727").unwrap()
-      );
+        let foo = BigIntWrapper(
+            num_bigint::BigInt::from_str(
+                "170141183460469231731687303715884105727",
+            )
+            .unwrap(),
+        );
 
-      let result: BigIntWrapper = from_slice(&[217, 39, 49, 55, 48, 49, 52, 49, 49, 56, 51, 52, 54, 48, 52, 54, 57, 50, 51, 49, 55, 51, 49, 54, 56,
-        55, 51, 48, 51, 55, 49, 53, 56, 56, 52, 49, 48, 53, 55, 50, 55]).unwrap();
-      assert_eq!(foo, result);
+        let result: BigIntWrapper = from_slice(&[
+            217, 39, 49, 55, 48, 49, 52, 49, 49, 56, 51, 52, 54, 48, 52, 54,
+            57, 50, 51, 49, 55, 51, 49, 54, 56, 55, 51, 48, 51, 55, 49, 53, 56,
+            56, 52, 49, 48, 53, 55, 50, 55,
+        ])
+        .unwrap();
+        assert_eq!(foo, result);
+    }
+
+    #[test]
+    fn test_read_bigint_in_struct() {
+        use crate::wrappers::polywrap_bigint;
+
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct Foo {
+            #[serde(with = "polywrap_bigint")]
+            big_int: BigInt,
+        }
+
+        let foo = Foo {
+            big_int: num_bigint::BigInt::from_str(
+                "170141183460469231731687303715884105727",
+            )
+            .unwrap(),
+        };
+
+        let result: Foo = from_slice(&[
+            129, 167, 98, 105, 103, 95, 105, 110, 116, 217, 39, 49, 55, 48, 49,
+            52, 49, 49, 56, 51, 52, 54, 48, 52, 54, 57, 50, 51, 49, 55, 51, 49,
+            54, 56, 55, 51, 48, 51, 55, 49, 53, 56, 56, 52, 49, 48, 53, 55, 50,
+            55,
+        ])
+        .unwrap();
+        assert_eq!(foo, result);
     }
 
     #[test]
     fn test_read_json() {
-      use serde_json::Value;
-      let foo = Value::Array(vec![Value::String("bar".to_string())]);
+        use serde_json::Value;
+        let foo = JSON(Value::Array(vec![Value::String("bar".to_string())]));
 
-      let result: Value = from_slice(&[167, 91, 34, 98, 97, 114, 34, 93]).unwrap();
-      assert_eq!(foo, result);
-  }
+        let result: JSON =
+            from_slice(&[167, 91, 34, 98, 97, 114, 34, 93]).unwrap();
+        assert_eq!(foo, result);
+    }
+
+    #[test]
+    fn test_read_json_in_struct() {
+        use crate::wrappers::polywrap_json;
+        use serde_json::Value;
+
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct Foo {
+            #[serde(with = "polywrap_json")]
+            json: Value,
+        }
+
+        let foo = Foo {
+            json: Value::Array(vec![Value::String("bar".to_string())]),
+        };
+
+        let result: Foo = from_slice(&[
+            129, 164, 106, 115, 111, 110, 167, 91, 34, 98, 97, 114, 34, 93,
+        ])
+        .unwrap();
+        assert_eq!(foo, result);
+    }
 }

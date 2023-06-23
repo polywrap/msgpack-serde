@@ -1,2 +1,2 @@
-pub mod bigint;
-pub mod json;
+pub mod polywrap_bigint;
+pub mod polywrap_json;

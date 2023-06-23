@@ -4,16 +4,23 @@ use std::{
 };
 
 use num_bigint::BigInt;
-use serde::{de::Visitor, Deserialize, Serialize, Serializer};
+use serde::{de::Visitor, Deserialize, Serialize, Serializer, Deserializer};
 
 #[derive(Debug, PartialEq)]
 pub struct BigIntWrapper(pub BigInt);
 
-pub fn bigint_serialize<S>(x: &BigInt, s: S) -> Result<S::Ok, S::Error>
+pub fn serialize<S>(x: &BigInt, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     s.serialize_str(&x.to_string())
+}
+
+pub fn deserialize<'de, D>(deserializer: D) -> Result<BigInt, D::Error>
+where
+  D: Deserializer<'de>,
+{
+  Ok(deserializer.deserialize_str(BigIntStrVisitor)?.0)
 }
 
 impl Serialize for BigIntWrapper {
