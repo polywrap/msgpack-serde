@@ -1,20 +1,33 @@
 use byteorder::{self, ReadBytesExt, WriteBytesExt};
 
+use crate::error::Error;
+
 const FIX_ARRAY_SIZE: u8 = 0x0f;
 const FIX_MAP_SIZE: u8 = 0x0f;
 const FIX_STR_SIZE: u8 = 0x1f;
 
 pub enum ExtensionType {
-  // must be in range 0-127
-  GenericMap,
+    // must be in range 0-127
+    GenericMap,
 }
 
-impl ExtensionType {
-  pub fn to_u8(&self) -> u8 {
-    match &self {
-        ExtensionType::GenericMap => 1,
+impl TryFrom<u8> for ExtensionType {
+    type Error = crate::error::Error;
+
+    fn try_from(value: u8) -> Result<Self, Error> {
+        match value {
+            1 => Ok(Self::GenericMap),
+            v => Err(Error::Message(format!("Unrecognized Ext type '{v}'"))),
+        }
     }
-  }
+}
+
+impl From<ExtensionType> for u8 {
+    fn from(value: ExtensionType) -> Self {
+        match value {
+            ExtensionType::GenericMap => 1,
+        }
+    }
 }
 
 /// Format markers in the MsgPack specification
@@ -86,11 +99,13 @@ impl Format {
         format: Format,
     ) -> Result<(), std::io::Error> {
         WriteBytesExt::write_u8(writer, format.to_u8())?;
-        
+
         Ok(())
     }
 
-    pub fn get_format<R: std::io::Read>(reader: &mut R) -> Result<Format, std::io::Error> {
+    pub fn get_format<R: std::io::Read>(
+        reader: &mut R,
+    ) -> Result<Format, std::io::Error> {
         let bytesval = ReadBytesExt::read_u8(reader)?;
         Ok(Format::from_u8(bytesval))
     }

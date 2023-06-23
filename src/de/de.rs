@@ -4,9 +4,7 @@ use crate::{
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::de::{self, Deserialize, IntoDeserializer, Visitor};
-use std::{
-    io::{Cursor, Read},
-};
+use std::io::{Cursor, Read};
 
 use super::{array::ArrayReadAccess, map::MapReadAccess};
 
@@ -53,6 +51,31 @@ impl<'de> Deserializer {
         self.buffer.set_position(position);
 
         Ok(format)
+    }
+
+    fn read_ext_length_and_type(&mut self) -> Result<(u32, ExtensionType)> {
+        let format = Format::get_format(self)?;
+        let byte_length = match format {
+            Format::FixExt1 => 1,
+            Format::FixExt2 => 2,
+            Format::FixExt4 => 4,
+            Format::FixExt8 => 8,
+            Format::FixExt16 => 16,
+            Format::Ext8 => ReadBytesExt::read_u8(self)? as u32,
+            Format::Ext16 => ReadBytesExt::read_u16::<BigEndian>(self)? as u32,
+            Format::Ext32 => ReadBytesExt::read_u32::<BigEndian>(self)?,
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'ext generic map'. {}",
+                    get_error_message(err_f)
+                );
+                return Err(Error::ExpectedExt(formatted_err));
+            }
+        };
+
+        let ext_type = ReadBytesExt::read_u8(self)?;
+
+        Ok((byte_length, ext_type.try_into()?))
     }
 
     fn read_array_length(&mut self) -> Result<u32> {
@@ -310,11 +333,46 @@ impl<'de> Deserializer {
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     type Error = Error;
 
-    fn deserialize_any<V>(self, _: V) -> Result<V::Value>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        todo!()
+        match self.peek_format()? {
+            Format::PositiveFixInt(_)
+            | Format::NegativeFixInt(_)
+            | Format::Int8 => self.deserialize_i8(visitor),
+            Format::FixMap(_) | Format::Map16 | Format::Map32 => todo!(),
+            Format::FixArray(_) | Format::Array16 | Format::Array32 => {
+                self.deserialize_seq(visitor)
+            }
+            Format::FixStr(_)
+            | Format::Str8
+            | Format::Str16
+            | Format::Str32 => self.deserialize_string(visitor),
+            Format::Nil => self.deserialize_unit(visitor),
+            Format::Reserved => todo!(),
+            Format::False | Format::True => self.deserialize_bool(visitor),
+            Format::Bin8 | Format::Bin16 | Format::Bin32 => {
+                self.deserialize_bytes(visitor)
+            }
+            Format::Float32 => self.deserialize_f32(visitor),
+            Format::Float64 => self.deserialize_f64(visitor),
+            Format::Uint8 => self.deserialize_u8(visitor),
+            Format::Uint16 => self.deserialize_u16(visitor),
+            Format::Uint32 => self.deserialize_u32(visitor),
+            Format::Uint64 => self.deserialize_u64(visitor),
+            Format::Int16 => self.deserialize_i16(visitor),
+            Format::Int32 => self.deserialize_i32(visitor),
+            Format::Int64 => self.deserialize_i64(visitor),
+            Format::FixExt1
+            | Format::FixExt2
+            | Format::FixExt4
+            | Format::FixExt8
+            | Format::FixExt16
+            | Format::Ext8
+            | Format::Ext16
+            | Format::Ext32 => todo!(),
+        }
     }
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
@@ -604,35 +662,12 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-        let format = Format::get_format(self)?;
+        let (_, ext_type) = self.read_ext_length_and_type()?;
 
-        // TODO: accept non-ext maps?
-
-        let _byte_length = match format {
-            Format::FixExt1 => 1,
-            Format::FixExt2 => 2,
-            Format::FixExt4 => 4,
-            Format::FixExt8 => 8,
-            Format::FixExt16 => 16,
-            Format::Ext8 => ReadBytesExt::read_u8(self)? as u32,
-            Format::Ext16 => ReadBytesExt::read_u16::<BigEndian>(self)? as u32,
-            Format::Ext32 => ReadBytesExt::read_u32::<BigEndian>(self)?,
-            err_f => {
-                let formatted_err = format!(
-                    "Property must be of type 'ext generic map'. {}",
-                    get_error_message(err_f)
-                );
-                return Err(Error::ExpectedExt(formatted_err));
-            }
-        };
-
-        // Get the extension type
-        let ext_type = ReadBytesExt::read_u8(self)?;
-
-        if ext_type != ExtensionType::GenericMap.to_u8() {
+        if let ExtensionType::GenericMap = ext_type {
+            let ext_type: u8 = ext_type.into();
             let formatted_err = format!(
-                "Extension must be of type 'ext generic map'. Found {}",
-                ext_type
+                "Extension must be of type 'ext generic map'. Found {ext_type}"
             );
             return Err(Error::ExpectedExt(formatted_err));
         }
@@ -727,11 +762,18 @@ impl Read for Deserializer {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::{BTreeMap, HashMap}, str::FromStr};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        str::FromStr,
+    };
 
+    use num_bigint::BigInt;
     use serde_derive::Deserialize;
 
-    use crate::{from_slice, wrappers::bigint::BigIntWrapper};
+    use crate::{
+        from_slice,
+        wrappers::{polywrap_bigint::BigIntWrapper, polywrap_json::JSON},
+    };
 
     #[test]
     fn test_read_empty_string() {
@@ -988,7 +1030,7 @@ mod tests {
 
     #[test]
     fn test_read_enum_string() {
-      #[derive(Deserialize, PartialEq, Debug)]
+        #[derive(Deserialize, PartialEq, Debug)]
         enum Foo {
             _FIRST,
             SECOND,

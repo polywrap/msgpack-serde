@@ -26,11 +26,11 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a> {
       Ok(())
   }
 
-  fn newtype_variant_seed<T>(self, _: T) -> Result<T::Value>
+  fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
   where
       T: DeserializeSeed<'de>,
   {
-    todo!()
+    seed.deserialize(self.de)
   }
 
   fn tuple_variant<V>(self, _len: usize, _: V) -> Result<V::Value>

@@ -47,7 +47,7 @@ impl<'a> MapSerializer<'a> {
     ) -> Result<(), EncodeError> {
         Ok(WriteBytesExt::write_u8(
             writer,
-            ExtensionType::GenericMap.to_u8(),
+            ExtensionType::GenericMap.into(),
         )?)
     }
 
