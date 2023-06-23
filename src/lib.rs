@@ -2,8 +2,8 @@ mod de;
 mod error;
 mod ser;
 mod format;
+pub mod wrappers;
 
-pub use num_bigint::BigInt;
 pub use bigdecimal::BigDecimal as BigNumber;
 pub use serde_json as JSON;
 pub use std::collections::BTreeMap as Map;

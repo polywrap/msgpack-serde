@@ -387,7 +387,7 @@ mod tests {
     use serde_derive::Serialize;
 
     use crate::to_vec;
-    use std::collections::BTreeMap;
+    use std::{collections::BTreeMap, str::FromStr};
 
     #[derive(Default, Debug)]
     struct Case<T> {
@@ -798,10 +798,24 @@ mod tests {
 
         let foo = Foo::SECOND;
 
+        let cases = [Case::new("enums", foo, &[1])];
+
+        for case in cases {
+            let result = to_vec(&case.input).unwrap();
+            assert_eq!(case.want, result.as_slice());
+        }
+    }
+
+    #[test]
+    fn test_bignumber() {
         let cases = [Case::new(
-            "enums",
-            foo,
-            &[1],
+            "BigNumber",
+            crate::BigNumber::from_str("3124124512.598273468017578125")
+                .unwrap(),
+            &[
+                189, 51, 49, 50, 52, 49, 50, 52, 53, 49, 50, 46, 53, 57, 56,
+                50, 55, 51, 52, 54, 56, 48, 49, 55, 53, 55, 56, 49, 50, 53,
+            ],
         )];
 
         for case in cases {
@@ -809,4 +823,52 @@ mod tests {
             assert_eq!(case.want, result.as_slice());
         }
     }
+
+    #[test]
+    fn test_bigint() {
+        use num_bigint::BigInt;
+        use crate::wrappers::bigint::bigint_serialize;
+
+        #[derive(Serialize)]
+        struct Foo {
+          #[serde(serialize_with="bigint_serialize")]
+          big_int: BigInt
+        }
+
+        let cases = [Case::new(
+          "BigInt",
+          Foo { big_int: BigInt::from(170_141_183_460_469_231_731_687_303_715_884_105_727i128) },
+          &[129, 167, 98, 105, 103, 95, 105, 110, 116, 217, 39, 49, 55, 48, 49, 52, 49, 49, 56, 51,
+          52, 54, 48, 52, 54, 57, 50, 51, 49, 55, 51, 49, 54, 56, 55, 51, 48, 51, 55, 49, 53, 56, 56, 52,
+          49, 48, 53, 55, 50, 55],
+        )];
+
+        for case in cases {
+            let result = to_vec(&case.input).unwrap();
+            assert_eq!(case.want, result.as_slice());
+        }
+    }
+
+    #[test]
+    fn test_json() {
+      use serde_json::Value;
+      use crate::wrappers::json::json_serialize;
+
+      #[derive(Serialize)]
+      struct Foo {
+        #[serde(serialize_with="json_serialize")]
+        json: Value
+      }
+
+      let cases = [Case::new(
+        "JSON",
+        Foo { json: Value::Array(vec![Value::String("bar".to_string())]) },
+        &[129, 164, 106, 115, 111, 110, 167, 91, 34, 98, 97, 114, 34, 93],
+      )];
+
+      for case in cases {
+          let result = to_vec(&case.input).unwrap();
+          assert_eq!(case.want, result.as_slice());
+      }
+  }
 }

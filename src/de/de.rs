@@ -727,11 +727,11 @@ impl Read for Deserializer {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, HashMap};
+    use std::{collections::{BTreeMap, HashMap}, str::FromStr};
 
     use serde_derive::Deserialize;
 
-    use crate::from_slice;
+    use crate::{from_slice, wrappers::bigint::BigIntWrapper};
 
     #[test]
     fn test_read_empty_string() {
@@ -1000,4 +1000,24 @@ mod tests {
         let result: Foo = from_slice(&[166, 83, 69, 67, 79, 78, 68]).unwrap();
         assert_eq!(foo, result);
     }
+
+    #[test]
+    fn test_bigint() {
+      let foo = BigIntWrapper(
+        num_bigint::BigInt::from_str("170141183460469231731687303715884105727").unwrap()
+      );
+
+      let result: BigIntWrapper = from_slice(&[217, 39, 49, 55, 48, 49, 52, 49, 49, 56, 51, 52, 54, 48, 52, 54, 57, 50, 51, 49, 55, 51, 49, 54, 56,
+        55, 51, 48, 51, 55, 49, 53, 56, 56, 52, 49, 48, 53, 55, 50, 55]).unwrap();
+      assert_eq!(foo, result);
+    }
+
+    #[test]
+    fn test_read_json() {
+      use serde_json::Value;
+      let foo = Value::Array(vec![Value::String("bar".to_string())]);
+
+      let result: Value = from_slice(&[167, 91, 34, 98, 97, 114, 34, 93]).unwrap();
+      assert_eq!(foo, result);
+  }
 }
