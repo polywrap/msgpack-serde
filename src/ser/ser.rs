@@ -791,12 +791,12 @@ mod tests {
     fn test_write_enum() {
         #[derive(Serialize)]
         enum Foo {
-            _FIRST,
-            SECOND,
-            _THIRD,
+            _First,
+            Second,
+            _Third,
         }
 
-        let foo = Foo::SECOND;
+        let foo = Foo::Second;
 
         let cases = [Case::new("enums", foo, &[1])];
 

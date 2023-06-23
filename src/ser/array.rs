@@ -62,7 +62,7 @@ impl ser::SerializeSeq for ArraySerializer<'_> {
             &self.array_len,
         )?;
         self.parent_encoder
-            .write(&self.array_serializer.get_buffer())?;
+            .write_all(&self.array_serializer.get_buffer())?;
         Ok(())
     }
 }
@@ -89,7 +89,7 @@ impl ser::SerializeTuple for ArraySerializer<'_> {
             &self.array_len,
         )?;
         self.parent_encoder
-            .write(&self.array_serializer.get_buffer())?;
+            .write_all(&self.array_serializer.get_buffer())?;
         Ok(())
     }
 }

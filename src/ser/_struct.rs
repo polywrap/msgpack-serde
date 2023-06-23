@@ -44,7 +44,7 @@ impl ser::SerializeStruct for StructSerializer<'_> {
     fn end(self) -> std::result::Result<Self::Ok, Self::Error> {
         MapSerializer::write_map_length(self.parent_encoder, &self.entries)?;
         self.parent_encoder
-            .write(&self.struct_serializer.get_buffer())?;
+            .write_all(&self.struct_serializer.get_buffer())?;
         Ok(())
     }
 }

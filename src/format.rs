@@ -79,19 +79,19 @@ impl Format {
     }
 
     pub fn is_negative_fixed_int(u: u8) -> bool {
-        (u & 0xe0) == Format::to_u8(&Format::NegativeFixInt(u as i8))
+        (u & 0xe0) == Format::to_u8(Format::NegativeFixInt(u as i8))
     }
 
     pub fn is_fixed_map(u: u8) -> bool {
-        (u & 0xf0) == Format::to_u8(&Format::FixMap(u))
+        (u & 0xf0) == Format::to_u8(Format::FixMap(u))
     }
 
     pub fn is_fixed_array(u: u8) -> bool {
-        (u & 0xf0) == Format::to_u8(&Format::FixArray(u))
+        (u & 0xf0) == Format::to_u8(Format::FixArray(u))
     }
 
     pub fn is_fixed_string(u: u8) -> bool {
-        (u & 0xe0) == Format::to_u8(&Format::FixStr(u))
+        (u & 0xe0) == Format::to_u8(Format::FixStr(u))
     }
 
     pub fn set_format<W: std::io::Write>(
@@ -154,8 +154,8 @@ impl Format {
     }
 
     /// Converts a MsgPack marker into a single byte
-    pub fn to_u8(&self) -> u8 {
-        match *self {
+    pub fn to_u8(self) -> u8 {
+        match self {
             Format::PositiveFixInt(val) => val,
             Format::FixMap(val) => 0x80 | (val & FIX_MAP_SIZE),
             Format::FixArray(val) => 0x90 | (val & FIX_ARRAY_SIZE),

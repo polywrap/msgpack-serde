@@ -44,7 +44,7 @@ where
     }
 }
 
-impl<'de> Deserializer {
+impl Deserializer {
     fn peek_format(&mut self) -> Result<Format> {
         let position = self.buffer.position();
         let format = Format::get_format(self)?;
@@ -1015,12 +1015,12 @@ mod tests {
     fn test_read_enum_number() {
         #[derive(Deserialize, PartialEq, Debug)]
         enum Foo {
-            _FIRST,
-            SECOND,
-            _THIRD,
+            _First,
+            Second,
+            _Third,
         }
 
-        let foo = Foo::SECOND;
+        let foo = Foo::Second;
 
         let result: Foo = from_slice(&[1]).unwrap();
         assert_eq!(foo, result);
@@ -1030,12 +1030,12 @@ mod tests {
     fn test_read_enum_string() {
         #[derive(Deserialize, PartialEq, Debug)]
         enum Foo {
-            _FIRST,
-            SECOND,
-            _THIRD,
+            _First,
+            Second,
+            _Third,
         }
 
-        let foo = Foo::SECOND;
+        let foo = Foo::Second;
 
         let result: Foo = from_slice(&[166, 83, 69, 67, 79, 78, 68]).unwrap();
         assert_eq!(foo, result);

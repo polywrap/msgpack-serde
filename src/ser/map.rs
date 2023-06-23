@@ -110,7 +110,7 @@ impl ser::SerializeMap for MapSerializer<'_> {
             &self.map_entries,
         )?;
 
-        aux_map_encoder.write(&self.map_serializer.get_buffer())?;
+        aux_map_encoder.write_all(&self.map_serializer.get_buffer())?;
 
         let map_buffer = aux_map_encoder.get_buffer();
 
@@ -119,7 +119,7 @@ impl ser::SerializeMap for MapSerializer<'_> {
             map_buffer.len(),
         )?;
         MapSerializer::write_ext_map_type(self.parent_encoder)?;
-        self.parent_encoder.write(&map_buffer)?;
+        self.parent_encoder.write_all(&map_buffer)?;
         Ok(())
     }
 }
