@@ -1,74 +1,8 @@
-//! Errors returned from I/O `Write` and `Read` operations
-use thiserror::Error;
+use std::fmt::Display;
+
+use serde::{ser, de};
 
 use crate::format::Format;
-
-/// Errors from encoding data
-#[derive(Debug, Error)]
-pub enum EncodeError {
-    #[error("{0}")]
-    NilWriteError(String),
-
-    #[error("{0}")]
-    FormatWriteError(String),
-
-    #[error("{0}")]
-    BooleanWriteError(String),
-
-    #[error("{0}")]
-    BinWriteError(String),
-
-    #[error("{0}")]
-    BigIntWriteError(String),
-
-    #[error("{0}")]
-    JSONWriteError(String),
-
-    #[error("{0}")]
-    Float32WriteError(String),
-
-    #[error("{0}")]
-    Float64WriteError(String),
-
-    #[error("{0}")]
-    Uint8WriteError(String),
-
-    #[error("{0}")]
-    Uint16WriteError(String),
-
-    #[error("{0}")]
-    Uint32WriteError(String),
-
-    #[error("{0}")]
-    Int8WriteError(String),
-
-    #[error("{0}")]
-    Int16WriteError(String),
-
-    #[error("{0}")]
-    Int32WriteError(String),
-
-    #[error("{0}")]
-    StrWriteError(String),
-
-    #[error("{0}")]
-    TypeWriteError(String),
-
-    #[error("{0}")]
-    IOError(String),
-}
-
-impl From<std::io::Error> for EncodeError {
-    fn from(e: std::io::Error) -> Self {
-        EncodeError::IOError(e.to_string())
-    }
-}
-
-impl From<serde_json::Error> for EncodeError {
-    fn from(e: serde_json::Error) -> EncodeError {
-        EncodeError::JSONWriteError(e.to_string())
-    }
-}
 
 pub fn get_error_message(format: Format) -> String {
     match format {
@@ -103,46 +37,42 @@ pub fn get_error_message(format: Format) -> String {
     }
 }
 
-use serde::{de, ser};
-use std::fmt::{self, Display};
-
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
+    #[error("`{0}`")]
     Message(String),
+    #[error("EOF error")]
     Eof,
+    #[error("Syntax Error")]
     Syntax,
+    #[error("Expected Boolean: `{0}`")]
     ExpectedBoolean(String),
+    #[error("Expected Unsigned Integer: `{0}`")]
     ExpectedUInteger(String),
+    #[error("Expected Integer: `{0}`")]
     ExpectedInteger(String),
+    #[error("Expected Bytes: `{0}`")]
     ExpectedBytes(String),
+    #[error("Expected Float: `{0}`")]
     ExpectedFloat(String),
+    #[error("Expected Char: `{0}`")]
     ExpectedChar(String),
+    #[error("Expected String: `{0}`")]
     ExpectedString(String),
+    #[error("Expected Null: `{0}`")]
     ExpectedNull(String),
+    #[error("Expected Array: `{0}`")]
     ExpectedArray(String),
-    ExpectedArrayComma(String),
-    ExpectedArrayEnd(String),
+    #[error("Expected Map: `{0}`")]
     ExpectedMap(String),
+    #[error("Expected Ext: `{0}`")]
     ExpectedExt(String),
-    ExpectedMapColon(String),
-    ExpectedMapComma(String),
-    ExpectedMapEnd(String),
+    #[error("Expected Enum: `{0}`")]
     ExpectedEnum(String),
+    #[error("Trailing characters in deserialization")]
     TrailingCharacters,
-}
-
-impl ser::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message(msg.to_string())
-    }
-}
-
-impl From<EncodeError> for Error {
-    fn from(value: EncodeError) -> Self {
-        Error::Message(value.to_string())
-    }
 }
 
 impl From<std::io::Error> for Error {
@@ -151,21 +81,14 @@ impl From<std::io::Error> for Error {
   }
 }
 
+impl ser::Error for Error {
+  fn custom<T: Display>(msg: T) -> Self {
+      Error::Message(msg.to_string())
+  }
+}
+
 impl de::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Error::Message(msg.to_string())
-    }
+  fn custom<T: Display>(msg: T) -> Self {
+      Error::Message(msg.to_string())
+  }
 }
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Message(msg) => write!(f, "{}", msg),
-            Error::Eof => f.write_str("unexpected end of input"),
-            /* and so forth */
-            _ => unimplemented!(),
-        }
-    }
-}
-
-impl std::error::Error for Error {}

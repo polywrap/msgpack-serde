@@ -4,7 +4,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use serde::{ser, Serialize};
 
 use crate::{
-    error::{EncodeError, Error},
+    error::{Error},
     format::{ExtensionType, Format}, Serializer,
 };
 
@@ -42,7 +42,7 @@ impl<'a> MapSerializer<'a> {
 
     pub fn write_ext_map_type<W: Write>(
         writer: &mut W,
-    ) -> Result<(), EncodeError> {
+    ) -> Result<(), Error> {
         Ok(WriteBytesExt::write_u8(
             writer,
             ExtensionType::GenericMap.into(),
