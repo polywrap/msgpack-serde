@@ -665,7 +665,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         V: Visitor<'de>,
     {
         let (_, ext_type) = self.read_ext_length_and_type()?;
-        dbg!(ext_type.clone());
 
         if let ExtensionType::GenericMap = ext_type {
             let map_len = self.read_map_length()?;
