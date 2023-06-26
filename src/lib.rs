@@ -1,3 +1,5 @@
+#[allow(irrefutable_let_patterns)]
+
 mod de;
 pub mod error;
 pub use error::*;
