@@ -665,18 +665,18 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         V: Visitor<'de>,
     {
         let (_, ext_type) = self.read_ext_length_and_type()?;
+        dbg!(ext_type.clone());
 
         if let ExtensionType::GenericMap = ext_type {
-            let ext_type: u8 = ext_type.into();
-            let formatted_err = format!(
-                "Extension must be of type 'ext generic map'. Found {ext_type}"
-            );
-            return Err(Error::ExpectedExt(formatted_err));
+            let map_len = self.read_map_length()?;
+            return visitor.visit_map(MapReadAccess::new(self, map_len));
         }
 
-        let map_len = self.read_map_length()?;
-
-        visitor.visit_map(MapReadAccess::new(self, map_len))
+        let ext_type: u8 = ext_type.into();
+        let formatted_err = format!(
+            "Extension must be of type 'ext generic map'. Found {ext_type}"
+        );
+        return Err(Error::ExpectedExt(formatted_err));
     }
 
     fn deserialize_struct<V>(
@@ -1040,7 +1040,8 @@ mod tests {
 
         let foo = Foo::Second;
 
-        let result: Foo = from_slice(&[166, 83, 69, 67, 79, 78, 68]).unwrap();
+        let result: Foo =
+            from_slice(&[166, 83, 101, 99, 111, 110, 100]).unwrap();
         assert_eq!(foo, result);
     }
 

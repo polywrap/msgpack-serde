@@ -6,6 +6,7 @@ const FIX_ARRAY_SIZE: u8 = 0x0f;
 const FIX_MAP_SIZE: u8 = 0x0f;
 const FIX_STR_SIZE: u8 = 0x1f;
 
+#[derive(Debug, Clone)]
 pub enum ExtensionType {
     // must be in range 0-127
     GenericMap,
