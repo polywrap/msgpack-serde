@@ -8,7 +8,7 @@ use crate::{
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::de::{self, Deserialize, IntoDeserializer, Visitor};
-use std::{io::{Cursor, Read}, fmt::format};
+use std::{io::{Cursor, Read}};
 
 use array::ArrayReadAccess;
 use map::MapReadAccess;
@@ -794,7 +794,7 @@ mod tests {
 
     use crate::{
         from_slice,
-        wrappers::{polywrap_bigint::BigIntWrapper, polywrap_json::JSON},
+        wrappers::{polywrap_bigint::BigIntWrapper, polywrap_json::JSONString},
     };
 
     #[test]
@@ -1114,9 +1114,9 @@ mod tests {
     #[test]
     fn test_read_json() {
         use serde_json::Value;
-        let foo = JSON(Value::Array(vec![Value::String("bar".to_string())]));
+        let foo = JSONString::new(Value::Array(vec![Value::String("bar".to_string())]));
 
-        let result: JSON =
+        let result: JSONString =
             from_slice(&[167, 91, 34, 98, 97, 114, 34, 93]).unwrap();
         assert_eq!(foo, result);
     }
