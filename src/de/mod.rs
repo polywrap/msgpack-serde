@@ -675,7 +675,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
         let formatted_err = format!(
             "Extension must be of type 'ext generic map'. Found {ext_type}"
         );
-        return Err(Error::ExpectedExt(formatted_err));
+        Err(Error::ExpectedExt(formatted_err))
     }
 
     fn deserialize_struct<V>(
@@ -721,7 +721,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
                 } else {
                     Err(Error::ExpectedUInteger(
                       format!("Expected enum variant as an unsigned integer. Could not find varitant with index {index} for enum {_name}")
-                    .to_string()))
+                    ))
                 }
             }
             Format::Str8
