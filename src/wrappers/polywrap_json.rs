@@ -5,7 +5,7 @@ use std::{
 use serde_json::Value;
 use serde::{de::Visitor, Deserialize, Serialize, Serializer, Deserializer};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct JSON(pub Value);
 
 pub fn serialize<S>(x: &Value, s: S) -> Result<S::Ok, S::Error>

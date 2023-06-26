@@ -8,7 +8,7 @@ use crate::{
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::de::{self, Deserialize, IntoDeserializer, Visitor};
-use std::io::{Cursor, Read};
+use std::{io::{Cursor, Read}, fmt::format};
 
 use array::ArrayReadAccess;
 use map::MapReadAccess;
@@ -346,7 +346,9 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
             Format::PositiveFixInt(_)
             | Format::NegativeFixInt(_)
             | Format::Int8 => self.deserialize_i8(visitor),
-            Format::FixMap(_) | Format::Map16 | Format::Map32 => todo!(),
+            Format::FixMap(_) | Format::Map16 | Format::Map32 => {
+                self.deserialize_map(visitor)
+            }
             Format::FixArray(_) | Format::Array16 | Format::Array32 => {
                 self.deserialize_seq(visitor)
             }
@@ -376,7 +378,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
             | Format::FixExt16
             | Format::Ext8
             | Format::Ext16
-            | Format::Ext32 => todo!(),
+            | Format::Ext32 => {
+                let (_, ext_type) = self.read_ext_length_and_type()?;
+
+                match ext_type {
+                    ExtensionType::GenericMap => self.deserialize_map(visitor),
+                }
+            }
         }
     }
 
@@ -664,18 +672,32 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-        let (_, ext_type) = self.read_ext_length_and_type()?;
+        match self.peek_format()? {
+            Format::FixMap(_) | Format::Map16 | Format::Map32 => {
+              let map_len = self.read_map_length()?;
+              return visitor.visit_map(MapReadAccess::new(self, map_len));
+            }
+            Format::Ext8
+            | Format::Ext16
+            | Format::Ext32
+            | Format::FixExt1
+            | Format::FixExt2
+            | Format::FixExt4
+            | Format::FixExt8
+            | Format::FixExt16 => {
+              let (_, ext_type) = self.read_ext_length_and_type()?;
 
-        if let ExtensionType::GenericMap = ext_type {
-            let map_len = self.read_map_length()?;
-            return visitor.visit_map(MapReadAccess::new(self, map_len));
+              if let ExtensionType::GenericMap = ext_type {
+                self.deserialize_map(visitor)
+              } else {
+                Err(Error::ExpectedMap(format!("Expected map or ext type 1 (generic map), but found Ext type '{ext_type:?}'")))
+              }
+            },
+            format => {
+              Err(Error::ExpectedMap(format!("Expected map or ext type 1 (generic map), but found: '{format}'")))
+            }
         }
-
-        let ext_type: u8 = ext_type.into();
-        let formatted_err = format!(
-            "Extension must be of type 'ext generic map'. Found {ext_type}"
-        );
-        Err(Error::ExpectedExt(formatted_err))
+        
     }
 
     fn deserialize_struct<V>(
