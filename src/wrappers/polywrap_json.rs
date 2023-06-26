@@ -6,7 +6,17 @@ use serde_json::Value;
 use serde::{de::Visitor, Deserialize, Serialize, Serializer, Deserializer};
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct JSON(pub Value);
+pub struct JSONString(Value);
+
+impl JSONString {
+  pub fn new(json: serde_json::Value) -> Self {
+    Self(json)
+  }
+
+  pub fn to_json(&self) -> serde_json::Value {
+    self.0.clone()
+  }
+}
 
 pub fn serialize<S>(x: &Value, s: S) -> Result<S::Ok, S::Error>
 where
@@ -22,7 +32,7 @@ where
   Ok(deserializer.deserialize_str(JSONStrVisitor)?.0)
 }
 
-impl Serialize for JSON {
+impl Serialize for JSONString {
   fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
   where
       S: serde::Serializer,
@@ -34,7 +44,7 @@ impl Serialize for JSON {
 struct JSONStrVisitor;
 
 impl<'de> Visitor<'de> for JSONStrVisitor {
-  type Value = JSON;
+  type Value = JSONString;
 
   fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
       formatter.write_str("a JSON string")
@@ -48,15 +58,27 @@ impl<'de> Visitor<'de> for JSONStrVisitor {
           serde::de::Error::custom(format!("Error parsing JSON: {e}"))
       })?;
 
-      Ok(JSON(big_int))
+      Ok(JSONString(big_int))
   }
 }
 
-impl<'a> Deserialize<'a> for JSON {
+impl<'a> Deserialize<'a> for JSONString {
   fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
   where
       D: serde::Deserializer<'a>,
   {
       deserializer.deserialize_str(JSONStrVisitor)
   }
+}
+
+impl From<JSONString> for serde_json::Value {
+    fn from(value: JSONString) -> Self {
+        value.to_json()
+    }
+}
+
+impl From<serde_json::Value> for JSONString {
+    fn from(value: serde_json::Value) -> Self {
+        JSONString::new(value)
+    }
 }
