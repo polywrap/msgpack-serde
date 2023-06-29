@@ -40,13 +40,7 @@ where
 {
     let mut deserializer = Deserializer::from_slice(buffer);
     let t = T::deserialize(&mut deserializer)?;
-    if deserializer.buffer.position() as usize
-        == deserializer.buffer.get_ref().len()
-    {
-        Ok(t)
-    } else {
-        Err(Error::TrailingCharacters)
-    }
+    Ok(t)
 }
 
 impl Deserializer {
