@@ -8,7 +8,7 @@ use crate::{
 };
 use byteorder::{BigEndian, ReadBytesExt};
 use serde::de::{self, Deserialize, IntoDeserializer, Visitor};
-use std::{io::{Cursor, Read}};
+use std::io::{Cursor, Read};
 
 use array::ArrayReadAccess;
 use map::MapReadAccess;
@@ -40,13 +40,7 @@ where
 {
     let mut deserializer = Deserializer::from_slice(buffer);
     let t = T::deserialize(&mut deserializer)?;
-    if deserializer.buffer.position() as usize
-        == deserializer.buffer.get_ref().len()
-    {
-        Ok(t)
-    } else {
-        Err(Error::TrailingCharacters)
-    }
+    Ok(t)
 }
 
 impl Deserializer {
@@ -202,19 +196,16 @@ impl Deserializer {
 
     fn parse_unsigned(&mut self) -> Result<u64> {
         let f = Format::get_format(self)?;
-        let prefix = f.to_u8();
-        if Format::is_positive_fixed_int(prefix) {
-            return Ok(prefix as u64);
-        } else if Format::is_negative_fixed_int(prefix) {
-            let formatted_err = format!(
-                "unsigned integer cannot be negative. {}",
-                get_error_message(f)
-            );
-
-            return Err(Error::ExpectedUInteger(formatted_err));
-        }
-
         match f {
+            Format::PositiveFixInt(v) => Ok(v as u64),
+            Format::NegativeFixInt(_) => {
+                let formatted_err = format!(
+                    "unsigned integer cannot be negative. {}",
+                    get_error_message(f)
+                );
+
+                return Err(Error::ExpectedUInteger(formatted_err));
+            }
             Format::Uint8 => Ok(ReadBytesExt::read_u8(self)? as u64),
             Format::Uint16 => {
                 Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as u64)
@@ -287,49 +278,41 @@ impl Deserializer {
     }
 
     fn parse_signed(&mut self) -> Result<i64> {
-        let f = Format::get_format(self)?;
-        let prefix = f.to_u8();
-        if Format::is_positive_fixed_int(prefix) {
-            Ok(prefix as i64)
-        } else if Format::is_negative_fixed_int(prefix) {
-            Ok((prefix as i8) as i64)
-        } else {
-            match f {
-                Format::Int8 => Ok(ReadBytesExt::read_i8(self)? as i64),
-                Format::Int16 => {
-                    Ok(ReadBytesExt::read_i16::<BigEndian>(self)? as i64)
-                }
-                Format::Int32 => {
-                    Ok(ReadBytesExt::read_i32::<BigEndian>(self)? as i64)
-                }
-                Format::Int64 => Ok(ReadBytesExt::read_i64::<BigEndian>(self)?),
-                Format::Uint8 => Ok(ReadBytesExt::read_u8(self)? as i64),
-                Format::Uint16 => {
-                    Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as i64)
-                }
-                Format::Uint32 => {
-                    Ok(ReadBytesExt::read_u32::<BigEndian>(self)? as i64)
-                }
-                Format::Uint64 => {
-                    let v = ReadBytesExt::read_u64::<BigEndian>(self)?;
+        match Format::get_format(self)? {
+            Format::PositiveFixInt(v) => Ok(v as i64),
+            Format::NegativeFixInt(v) => Ok((v as i8) as i64),
+            Format::Int8 => Ok(ReadBytesExt::read_i8(self)? as i64),
+            Format::Int16 => {
+                Ok(ReadBytesExt::read_i16::<BigEndian>(self)? as i64)
+            }
+            Format::Int32 => {
+                Ok(ReadBytesExt::read_i32::<BigEndian>(self)? as i64)
+            }
+            Format::Int64 => Ok(ReadBytesExt::read_i64::<BigEndian>(self)?),
+            Format::Uint8 => Ok(ReadBytesExt::read_u8(self)? as i64),
+            Format::Uint16 => {
+                Ok(ReadBytesExt::read_u16::<BigEndian>(self)? as i64)
+            }
+            Format::Uint32 => {
+                Ok(ReadBytesExt::read_u32::<BigEndian>(self)? as i64)
+            }
+            Format::Uint64 => {
+                let v = ReadBytesExt::read_u64::<BigEndian>(self)?;
 
-                    if v <= i64::MAX as u64 {
-                        Ok(v as i64)
-                    } else {
-                        let formatted_err = format!(
-                            "integer overflow: value = {}; bits = 64",
-                            v
-                        );
-                        Err(Error::Message(formatted_err))
-                    }
+                if v <= i64::MAX as u64 {
+                    Ok(v as i64)
+                } else {
+                    let formatted_err =
+                        format!("integer overflow: value = {}; bits = 64", v);
+                    Err(Error::Message(formatted_err))
                 }
-                err_f => {
-                    let formatted_err = format!(
-                        "Property must be of type 'int'. {}",
-                        get_error_message(err_f)
-                    );
-                    Err(Error::ExpectedInteger(formatted_err))
-                }
+            }
+            err_f => {
+                let formatted_err = format!(
+                    "Property must be of type 'int'. {}",
+                    get_error_message(err_f)
+                );
+                Err(Error::ExpectedInteger(formatted_err))
             }
         }
     }
@@ -409,6 +392,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
+        println!("{:?}", self.buffer.clone());
         let v = self.parse_signed()?;
         if v <= i8::MAX as i64 && v >= i8::MIN as i64 {
             visitor.visit_i8(v as i8)
@@ -697,7 +681,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
               Err(Error::ExpectedMap(format!("Expected map or ext type 1 (generic map), but found: '{format}'")))
             }
         }
-        
     }
 
     fn deserialize_struct<V>(
@@ -1114,7 +1097,9 @@ mod tests {
     #[test]
     fn test_read_json() {
         use serde_json::Value;
-        let foo = JSONString::new(Value::Array(vec![Value::String("bar".to_string())]));
+        let foo = JSONString::new(Value::Array(vec![Value::String(
+            "bar".to_string(),
+        )]));
 
         let result: JSONString =
             from_slice(&[167, 91, 34, 98, 97, 114, 34, 93]).unwrap();
