@@ -1,6 +1,4 @@
-use std::{
-  fmt::{self},
-};
+use std::fmt::{self};
 
 use serde_json::Value;
 use serde::{de::Visitor, Deserialize, Serialize, Serializer, Deserializer};

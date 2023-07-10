@@ -392,7 +392,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer {
     where
         V: Visitor<'de>,
     {
-        println!("{:?}", self.buffer.clone());
         let v = self.parse_signed()?;
         if v <= i8::MAX as i64 && v >= i8::MIN as i64 {
             visitor.visit_i8(v as i8)
