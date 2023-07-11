@@ -6,7 +6,7 @@ use std::{
 use num_bigint::BigInt;
 use serde::{de::Visitor, Deserialize, Serialize, Serializer, Deserializer};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct BigIntWrapper(pub BigInt);
 
 pub fn serialize<S>(x: &BigInt, s: S) -> Result<S::Ok, S::Error>
