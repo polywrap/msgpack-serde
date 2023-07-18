@@ -204,7 +204,7 @@ impl Deserializer {
                     get_error_message(f)
                 );
 
-                return Err(Error::ExpectedUInteger(formatted_err));
+                Err(Error::ExpectedUInteger(formatted_err))
             }
             Format::Uint8 => Ok(ReadBytesExt::read_u8(self)? as u64),
             Format::Uint16 => {
@@ -280,7 +280,7 @@ impl Deserializer {
     fn parse_signed(&mut self) -> Result<i64> {
         match Format::get_format(self)? {
             Format::PositiveFixInt(v) => Ok(v as i64),
-            Format::NegativeFixInt(v) => Ok((v as i8) as i64),
+            Format::NegativeFixInt(v) => Ok(v as i64),
             Format::Int8 => Ok(ReadBytesExt::read_i8(self)? as i64),
             Format::Int16 => {
                 Ok(ReadBytesExt::read_i16::<BigEndian>(self)? as i64)
