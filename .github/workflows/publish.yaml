@@ -1,0 +1,42 @@
+name: Publish
+on:
+  # When Pull Request is merged
+  pull_request_target:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  Publish-Crates-IO:
+    name: Publish to crates.io
+    if: |
+      github.event.pull_request.merged &&
+      endsWith(github.event.pull_request.title, '/workflows/publish')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: 1.69.0
+          override: true
+
+      - name: Publish workspace packages to crates.io
+        run: .github/scripts/release.sh
+        env:
+          CRATES_IO_TOKEN: ${{secrets.POLYWRAP_BUILD_BOT_CRATES_PAT}}
+
+      - uses: actions/github-script@0.8.0
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            github.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '**[Crates.io Release Published](https://crates.io/crates/polywrap_msgpack_serde/versions)** 🎉'
+            })
