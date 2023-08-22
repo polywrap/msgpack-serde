@@ -11,7 +11,7 @@ pub use bigdecimal::BigDecimal as BigNumber;
 pub use serde_json as JSON;
 pub use std::collections::BTreeMap as Map;
 pub use serde_bytes as bytes;
-pub use num_bigint::BigInt;
+pub use num_bigint::{BigInt, ParseBigIntError};
 pub use wrappers::polywrap_bigint::BigIntWrapper;
 pub use wrappers::polywrap_json::JSONString;
 

@@ -1,6 +1,6 @@
 [package]
 name = "polywrap_msgpack_serde"
-version = "0.0.2-beta.5"
+version = "0.0.2-beta.6"
 authors = ["Nestor Amesty <nestor@polywrap.io>"]
 categories = ["encoding"]
 description = "An msgpack Serializer and Deserializer data format with Serde for Polywrap"
